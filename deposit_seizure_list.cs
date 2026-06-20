@@ -1109,7 +1109,7 @@ public class DepositSeizureApp : Application
     }
 
     // スピナー回転アニメーションを開始
-    // By 方式（現在値に加算）で 360→0 リセットのカクつきを回避
+    // By 方式（現在値に加算）でサイクル境界のちらつきを防止
     private void StartSpinner()
     {
         if (spinnerRotation == null) return;
@@ -1125,6 +1125,30 @@ public class DepositSeizureApp : Application
     {
         if (spinnerRotation == null) return;
         spinnerRotation.BeginAnimation(RotateTransform.AngleProperty, null);
+    }
+
+    // オーバーレイのフェードイン（Opacity 0→1）
+    private void FadeInOverlay()
+    {
+        overlayPanel.BeginAnimation(UIElement.OpacityProperty, null);
+        overlayPanel.Opacity = 0;
+        overlayPanel.Visibility = Visibility.Visible;
+        var anim = new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(150)));
+        overlayPanel.BeginAnimation(UIElement.OpacityProperty, anim);
+    }
+
+    // オーバーレイのフェードアウト（Opacity 1→0 → Collapsed）
+    private void FadeOutOverlay(Action onComplete = null)
+    {
+        var anim = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromMilliseconds(150)));
+        anim.Completed += delegate
+        {
+            overlayPanel.Visibility = Visibility.Collapsed;
+            overlayPanel.BeginAnimation(UIElement.OpacityProperty, null);
+            overlayPanel.Opacity = 1;
+            if (onComplete != null) onComplete();
+        };
+        overlayPanel.BeginAnimation(UIElement.OpacityProperty, anim);
     }
 
     private void ValidateDelivery()
@@ -1175,19 +1199,19 @@ public class DepositSeizureApp : Application
     {
         ShowState("main");
         mainPanel.Visibility = Visibility.Visible;
-        overlayPanel.Visibility = Visibility.Visible;
         loadingOverlay.Visibility = Visibility.Visible;
         resultOverlay.Visibility = Visibility.Collapsed;
+        FadeInOverlay();
 
         var worker = new BackgroundWorker();
         worker.DoWork += delegate(object s, DoWorkEventArgs args) { args.Result = ReadExcelFile(filePath); };
         worker.RunWorkerCompleted += delegate(object s, RunWorkerCompletedEventArgs args)
         {
-            overlayPanel.Visibility = Visibility.Collapsed;
             if (args.Error != null) { ShowResult("error", "読込失敗", "", args.Error.Message); return; }
             var data = args.Result as Dictionary<string, object>;
             if (data != null && data.ContainsKey("error")) { ShowResult("error", "読込失敗", "", data["error"].ToString()); return; }
             PopulateForm(data);
+            FadeOutOverlay();
         };
         worker.RunWorkerAsync();
     }
@@ -1624,9 +1648,9 @@ public class DepositSeizureApp : Application
         if (excel == null || string.IsNullOrEmpty(currentFilePath)) return;
 
         // オーバーレイ表示（処理中スピナー）
-        overlayPanel.Visibility = Visibility.Visible;
         loadingOverlay.Visibility = Visibility.Visible;
         resultOverlay.Visibility = Visibility.Collapsed;
+        FadeInOverlay();
 
         var worker = new BackgroundWorker();
         worker.DoWork += delegate(object s, DoWorkEventArgs args)
@@ -1645,9 +1669,9 @@ public class DepositSeizureApp : Application
         };
         worker.RunWorkerCompleted += delegate(object s, RunWorkerCompletedEventArgs args)
         {
-            overlayPanel.Visibility = Visibility.Collapsed;
             if (args.Error == null)
                 ApplySheet(args.Result as Dictionary<string, object>);
+            FadeOutOverlay();
         };
         worker.RunWorkerAsync();
     }
@@ -1676,9 +1700,9 @@ public class DepositSeizureApp : Application
         }
 
         // オーバーレイ表示（処理中スピナー）
-        overlayPanel.Visibility = Visibility.Visible;
         loadingOverlay.Visibility = Visibility.Visible;
         resultOverlay.Visibility = Visibility.Collapsed;
+        FadeInOverlay();
 
         // UI入力値をDictionaryに収集（BackgroundWorkerに渡すため）
         string deliveryAddr = (chkDeliveryOutput.IsChecked == true)
@@ -1710,8 +1734,6 @@ public class DepositSeizureApp : Application
         };
         worker.RunWorkerCompleted += delegate(object s, RunWorkerCompletedEventArgs args)
         {
-            overlayPanel.Visibility = Visibility.Collapsed;
-
             if (args.Error != null)
             {
                 ShowResult("error", "処理失敗", "", args.Error.Message);
@@ -1867,11 +1889,10 @@ public class DepositSeizureApp : Application
         resultSub.Text = last ? "" : ((currentFileIndex + 2) + " / " + fileEntries.Count + " 件目へ進みます");
     }
 
-    // 次のファイルへ進む（オーバーレイを閉じて次のインデックスを読み込む）
+    // 次のファイルへ進む（オーバーレイをフェードアウトしてから次のインデックスを読み込む）
     private void ProceedToNext()
     {
-        overlayPanel.Visibility = Visibility.Collapsed;
-        LoadFileAtIndex(currentFileIndex + 1);
+        FadeOutOverlay(delegate { LoadFileAtIndex(currentFileIndex + 1); });
     }
 
     // ==============================================================
