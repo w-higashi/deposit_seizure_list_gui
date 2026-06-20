@@ -2404,6 +2404,70 @@ public class DepositSeizureApp : Application
     WindowStartupLocation='CenterScreen' Background='#F9F9F9' FontFamily='Meiryo UI'
     UseLayoutRounding='True' SnapsToDevicePixels='True'>
 <Window.Resources>
+    <!-- TextBox 角丸化（全TextBoxに自動適用） -->
+    <Style TargetType='TextBox'>
+        <Setter Property='Template'><Setter.Value>
+            <ControlTemplate TargetType='TextBox'>
+                <Border Background='{TemplateBinding Background}'
+                        BorderBrush='{TemplateBinding BorderBrush}'
+                        BorderThickness='{TemplateBinding BorderThickness}'
+                        CornerRadius='4' Padding='{TemplateBinding Padding}'
+                        SnapsToDevicePixels='True'>
+                    <ScrollViewer x:Name='PART_ContentHost' Focusable='False'/></Border>
+            </ControlTemplate>
+        </Setter.Value></Setter>
+    </Style>
+    <!-- ComboBox フラットデザイン（TextBoxと統一した白背景＋角丸） -->
+    <Style TargetType='ComboBox'>
+        <Setter Property='Background' Value='White'/>
+        <Setter Property='BorderBrush' Value='#D0D0D0'/>
+        <Setter Property='BorderThickness' Value='1'/>
+        <Setter Property='Padding' Value='6,5'/>
+        <Setter Property='Cursor' Value='Hand'/>
+        <Setter Property='Template'><Setter.Value>
+            <ControlTemplate TargetType='ComboBox'>
+                <Grid x:Name='comboRoot'>
+                    <!-- 透明ToggleButton: ドロップダウンの開閉を制御 -->
+                    <ToggleButton BorderThickness='0' Background='Transparent' Focusable='False' ClickMode='Press'
+                        IsChecked='{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}'>
+                        <ToggleButton.Template><ControlTemplate TargetType='ToggleButton'>
+                            <Border Background='Transparent'/></ControlTemplate></ToggleButton.Template>
+                    </ToggleButton>
+                    <!-- 表示用Border: 白背景＋角丸＋ドロップダウン矢印 -->
+                    <Border x:Name='bd' Background='{TemplateBinding Background}'
+                            BorderBrush='{TemplateBinding BorderBrush}'
+                            BorderThickness='{TemplateBinding BorderThickness}'
+                            CornerRadius='4' IsHitTestVisible='False'>
+                        <Grid Margin='{TemplateBinding Padding}'>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width='*'/><ColumnDefinition Width='20'/></Grid.ColumnDefinitions>
+                            <ContentPresenter Content='{TemplateBinding SelectionBoxItem}'
+                                ContentTemplate='{TemplateBinding SelectionBoxItemTemplate}'
+                                HorizontalAlignment='Left' VerticalAlignment='Center'/>
+                            <Path Grid.Column='1' Data='M0,0 L4,4 8,0' Stroke='#888'
+                                  StrokeThickness='1.5' VerticalAlignment='Center' HorizontalAlignment='Center'/>
+                        </Grid>
+                    </Border>
+                    <!-- ドロップダウンPopup -->
+                    <Popup x:Name='PART_Popup' AllowsTransparency='True' Placement='Bottom'
+                           IsOpen='{TemplateBinding IsDropDownOpen}'>
+                        <Border Background='White' BorderBrush='#D0D0D0' BorderThickness='1'
+                                CornerRadius='4' Margin='0,2,0,0' Padding='0,4'
+                                MinWidth='{Binding ActualWidth, ElementName=comboRoot}'>
+                            <Border.Effect><DropShadowEffect BlurRadius='8' ShadowDepth='2' Opacity='0.12'/></Border.Effect>
+                            <ScrollViewer MaxHeight='200'>
+                                <StackPanel IsItemsHost='True'/></ScrollViewer>
+                        </Border>
+                    </Popup>
+                </Grid>
+                <ControlTemplate.Triggers>
+                    <Trigger Property='IsMouseOver' Value='True'>
+                        <Setter TargetName='bd' Property='BorderBrush' Value='#005FB8'/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value></Setter>
+    </Style>
+    <!-- アクセントボタン（青背景） -->
     <Style x:Key='AB' TargetType='Button'>
         <Setter Property='Background' Value='#005FB8'/><Setter Property='Foreground' Value='White'/>
         <Setter Property='FontSize' Value='12'/><Setter Property='Padding' Value='16,8'/>
