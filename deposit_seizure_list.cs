@@ -1397,33 +1397,39 @@ public class DepositSeizureApp : Application
                 string coverCol = activeProfile.CoverCell.Substring(0, colEndIdx);
                 int coverRow = int.Parse(activeProfile.CoverCell.Substring(colEndIdx));
 
-                // coverCell列を全行スキャンして coverOffsets と stopRows を同時に収集
+                // coverCell列を一括取得してcoverOffsetsとstopRowsを同時収集
+                // （Value2 による範囲一括取得で、COM呼出しを1回に削減）
+                var coverRange = ws.Range[coverCol + "1", coverCol + lastUsedRow.ToString()];
+                object rawCoverData = coverRange.Value2;
+                object[,] coverData = rawCoverData is object[,] ? (object[,])rawCoverData : null;
+
                 for (int r = 1; r <= lastUsedRow; r++)
                 {
-                    try
-                    {
-                        string cellValue = Convert.ToString(ws.Range[coverCol + r.ToString()].Value2 ?? "");
-                        string trimmed = cellValue.Trim();
+                    string cellValue = "";
+                    if (coverData != null)
+                        cellValue = Convert.ToString(coverData[r, 1] ?? "");
+                    else if (lastUsedRow == 1)
+                        cellValue = Convert.ToString(rawCoverData ?? "");
 
-                        if (trimmed == activeProfile.CoverValue)
+                    string trimmed = cellValue.Trim();
+
+                    if (trimmed == activeProfile.CoverValue)
+                    {
+                        // 表紙の目印を検出（オフセット = 検出行 - テンプレート上のcoverCell行）
+                        offsets.Add(r - coverRow);
+                    }
+                    else if (activeProfile.StopValues != null && trimmed.Length > 0)
+                    {
+                        // stopValues に一致する行を検出（明細ページヘッダー等）
+                        foreach (var sv in activeProfile.StopValues)
                         {
-                            // 表紙の目印を検出（オフセット = 検出行 - テンプレート上のcoverCell行）
-                            offsets.Add(r - coverRow);
-                        }
-                        else if (activeProfile.StopValues != null && trimmed.Length > 0)
-                        {
-                            // stopValues に一致する行を検出（明細ページヘッダー等）
-                            foreach (var sv in activeProfile.StopValues)
+                            if (trimmed == sv)
                             {
-                                if (trimmed == sv)
-                                {
-                                    stopRowList.Add(r);
-                                    break;
-                                }
+                                stopRowList.Add(r);
+                                break;
                             }
                         }
                     }
-                    catch { /* セル読取り失敗は無視 */ }
                 }
             }
             catch { /* UsedRange 取得失敗時はオフセット0で続行 */ }
@@ -1460,6 +1466,28 @@ public class DepositSeizureApp : Application
             var accounts = new List<AccountItem>();
             bool isYucho = institution.Contains("ゆうちょ") || institution.Contains("郵貯");
 
+            // 口座テーブル列のインデックスを事前計算（一括取得した2D配列へのアクセス用）
+            string[] dataCols = {
+                activeProfile.BranchNameCol, activeProfile.BranchNumberCol,
+                activeProfile.AccountTypeCol, activeProfile.LastTransactionCol,
+                activeProfile.AccountNumberCol, activeProfile.BalanceCol
+            };
+            string leftCol = dataCols[0], rightCol = dataCols[0];
+            int leftIdx = BusinessLogic.ColToIndex(leftCol);
+            int rightIdx = leftIdx;
+            foreach (var col in dataCols)
+            {
+                int idx = BusinessLogic.ColToIndex(col);
+                if (idx < leftIdx) { leftIdx = idx; leftCol = col; }
+                if (idx > rightIdx) { rightIdx = idx; rightCol = col; }
+            }
+            int cBN  = BusinessLogic.ColToIndex(activeProfile.BranchNameCol) - leftIdx + 1;
+            int cBNR = BusinessLogic.ColToIndex(activeProfile.BranchNumberCol) - leftIdx + 1;
+            int cAT  = BusinessLogic.ColToIndex(activeProfile.AccountTypeCol) - leftIdx + 1;
+            int cLT  = BusinessLogic.ColToIndex(activeProfile.LastTransactionCol) - leftIdx + 1;
+            int cAN  = BusinessLogic.ColToIndex(activeProfile.AccountNumberCol) - leftIdx + 1;
+            int cBL  = BusinessLogic.ColToIndex(activeProfile.BalanceCol) - leftIdx + 1;
+
             foreach (var coverOffset in offsets)
             {
                 int startRow = activeProfile.AccountStartRow + coverOffset;
@@ -1468,34 +1496,33 @@ public class DepositSeizureApp : Application
                 // 各表紙ブロックの届出住所を取得（表紙ごとに異なる可能性があるため）
                 string coverDeliveryAddr = GetCell(ws, activeProfile.DeliveryAddressCell, coverOffset);
 
-                // 次の表紙ブロックの口座テーブル開始行を算出（越境防止）
-                // コンソール版と同様に、次の表紙・stopRow・200行上限の最小値で制限
-                int nextBlockStartRow = (coverIndex + 1 < offsets.Count)
-                    ? activeProfile.AccountStartRow + offsets[coverIndex + 1]
-                    : startRow + ACCOUNT_TABLE_MAX_ROWS;
-
-                for (int r = startRow; r < startRow + ACCOUNT_TABLE_MAX_ROWS; r++)
+                // 行範囲の上限を算出（次の表紙ブロック、stopRow、200行上限の最小値）
+                int upperLimit = Math.Min(
+                    (coverIndex + 1 < offsets.Count)
+                        ? activeProfile.AccountStartRow + offsets[coverIndex + 1]
+                        : startRow + ACCOUNT_TABLE_MAX_ROWS,
+                    startRow + ACCOUNT_TABLE_MAX_ROWS) - 1;
+                foreach (var sr in stopRowList)
                 {
-                    // 次の表紙ブロックに到達したら停止（防御的チェック）
-                    if (r >= nextBlockStartRow)
-                        break;
+                    if (sr > startRow) { upperLimit = Math.Min(upperLimit, sr - 1); break; }
+                }
 
-                    // stopValues チェック（口座テーブルの終端検出）
-                    // ※ stopRowList は表紙ブロック検出時に一括収集済み。
-                    //    ここでは口座テーブルの読取り終了判定のみ行う。
-                    if (stopRowList.Contains(r))
-                        break;
+                if (upperLimit < startRow) continue;
 
+                // 口座テーブルを範囲一括取得（COM呼出し1回/ブロック）
+                var tableRange = ws.Range[leftCol + startRow.ToString(), rightCol + upperLimit.ToString()];
+                object rawTableData = tableRange.Value2;
+                object[,] tableData = rawTableData is object[,] ? (object[,])rawTableData : null;
+                int rowCount = (tableData != null) ? tableData.GetLength(0) : 1;
+
+                for (int ri = 1; ri <= rowCount; ri++)
+                {
                     // 口座番号の取得
-                    string accountNum = "";
-                    try { accountNum = Convert.ToString(ws.Range[activeProfile.AccountNumberCol + r].Value2 ?? ""); }
-                    catch { }
+                    string accountNum = BulkCell(tableData, ri, cAN);
                     if (string.IsNullOrWhiteSpace(accountNum)) continue;
 
                     // 支店番号の取得
-                    string branchNumber = "";
-                    try { branchNumber = Convert.ToString(ws.Range[activeProfile.BranchNumberCol + r].Value2 ?? ""); }
-                    catch { }
+                    string branchNumber = BulkCell(tableData, ri, cBNR);
 
                     // 口座番号・支店番号がともに非数値の行はスキップ
                     // （継続ページのヘッダー行「支店名｜支店番号｜口座種別｜...」を読み飛ばす）
@@ -1506,9 +1533,7 @@ public class DepositSeizureApp : Application
                     if (!accountNumIsNumeric && !branchNumIsNumeric) continue;
 
                     // 支店名の取得（内部空白も全て除去。コンソール版と同一の正規化）
-                    string branchName = "";
-                    try { branchName = Convert.ToString(ws.Range[activeProfile.BranchNameCol + r].Value2 ?? ""); }
-                    catch { }
+                    string branchName = BulkCell(tableData, ri, cBN);
                     branchName = branchName.Trim().Replace(" ", "").Replace("\u3000", "");
 
                     // ゆうちょ銀行の場合、支店名が空なら貯金事務センター名で補完
@@ -1528,25 +1553,19 @@ public class DepositSeizureApp : Application
                     }
 
                     // 口座種別の取得
-                    string accountType = "";
-                    try { accountType = Convert.ToString(ws.Range[activeProfile.AccountTypeCol + r].Value2 ?? ""); }
-                    catch { }
+                    string accountType = BulkCell(tableData, ri, cAT);
 
                     // 最終取引日の取得（Excelシリアル値または文字列に対応）
                     string lastTransaction = "";
-                    try
-                    {
-                        var lastTransValue = ws.Range[activeProfile.LastTransactionCol + r].Value2;
-                        if (lastTransValue is double)
-                            lastTransaction = DateTime.FromOADate((double)lastTransValue).ToString("yyyy/MM/dd");
-                        else if (lastTransValue != null)
-                            lastTransaction = lastTransValue.ToString();
-                    }
-                    catch { }
+                    object lastTransRaw = BulkCellRaw(tableData, ri, cLT);
+                    if (lastTransRaw is double)
+                        lastTransaction = DateTime.FromOADate((double)lastTransRaw).ToString("yyyy/MM/dd");
+                    else if (lastTransRaw != null)
+                        lastTransaction = lastTransRaw.ToString();
 
                     // 残高の取得
                     double balanceValue = 0;
-                    try { balanceValue = Convert.ToDouble(ws.Range[activeProfile.BalanceCol + r].Value2 ?? 0); }
+                    try { balanceValue = Convert.ToDouble(BulkCellRaw(tableData, ri, cBL) ?? 0); }
                     catch { }
 
                     // AccountItem を構築
@@ -1603,7 +1622,21 @@ public class DepositSeizureApp : Application
         catch { return ""; }
     }
 
-    // ゆうちょ銀行の支店番号（記号）から貯金事務センター名を返す
+    // 2D配列から安全に文字列を取得（Value2 一括取得用、1始まりインデックス）
+    private static string BulkCell(object[,] data, int row, int col)
+    {
+        if (data == null) return "";
+        try { return Convert.ToString(data[row, col] ?? ""); }
+        catch { return ""; }
+    }
+
+    // 2D配列から生の値を取得（日付・数値のシリアル値判定用）
+    private static object BulkCellRaw(object[,] data, int row, int col)
+    {
+        if (data == null) return null;
+        try { return data[row, col]; }
+        catch { return null; }
+    }
     // 1桁目: "1"=総合口座, "0"=振替口座、2〜3桁目: 地域コード
     // 該当なしの場合は null を返す（GUI版では支店名空として表示対象外になる）
     private string GetYuchoCenter(string branchNumber)
