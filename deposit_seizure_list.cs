@@ -1043,25 +1043,30 @@ public class DepositSeizureApp : Application
         guideText.Text = msg;
     }
 
-    // 口座テーブルの列幅自動調整（余白をゼロにする）
+    // 口座テーブルの列幅自動調整
+    // 支店名のみ可変幅（残りスペースを全て吸収）、他5列は固定幅
     private void AdjustAccountColumns()
     {
         var gv = accountList.View as GridView;
         if (gv == null || gv.Columns.Count < 6) return;
-        double total = accountList.ActualWidth - SystemParameters.VerticalScrollBarWidth - 10;
+
+        double total = accountList.ActualWidth - SystemParameters.VerticalScrollBarWidth - 4;
         if (total <= 0) return;
-        // 支店番号・口座種別・最終取引日・口座番号は固定比率、支店名と残高が可変
-        double fixed4 = 80 + 90 + 120 + 100; // 支店番号+口座種別+最終取引日(満期日)+口座番号
-        double remaining = total - fixed4;
-        if (remaining < 200) remaining = 200;
-        double branchW = remaining * 0.6;   // 支店名に60%
-        double balanceW = remaining * 0.4;  // 残高に40%
+
+        double col1 = 95;   // 支店番号
+        double col2 = 110;  // 口座種別
+        double col3 = 150;  // 最終取引日(満期日)
+        double col4 = 120;  // 口座番号
+        double col5 = 135;  // 残高
+        double branchW = total - col1 - col2 - col3 - col4 - col5;
+        if (branchW < 120) branchW = 120;
+
         gv.Columns[0].Width = branchW;
-        gv.Columns[1].Width = 80;
-        gv.Columns[2].Width = 90;
-        gv.Columns[3].Width = 120;
-        gv.Columns[4].Width = 100;
-        gv.Columns[5].Width = balanceW;
+        gv.Columns[1].Width = col1;
+        gv.Columns[2].Width = col2;
+        gv.Columns[3].Width = col3;
+        gv.Columns[4].Width = col4;
+        gv.Columns[5].Width = col5;
     }
 
     private void ValidateDelivery()
@@ -2400,7 +2405,7 @@ public class DepositSeizureApp : Application
         string xaml = @"
 <Window xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
     xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
-    Title='預金差押予定一覧 作成ツール' Width='1000' Height='620' MinWidth='900' MinHeight='520'
+    Title='預金差押予定一覧 作成ツール' Width='1000' Height='660' MinWidth='900' MinHeight='520'
     WindowStartupLocation='CenterScreen' Background='#F9F9F9' FontFamily='Meiryo UI'
     UseLayoutRounding='True' SnapsToDevicePixels='True'>
 <Window.Resources>
@@ -2479,6 +2484,7 @@ public class DepositSeizureApp : Application
                 <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='Background' Value='#004FA0'/></Trigger>
                 <Trigger Property='IsEnabled' Value='False'><Setter TargetName='bd' Property='Background' Value='#CCC'/><Setter Property='Foreground' Value='#999'/></Trigger>
             </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+    <!-- グレーボタン -->
     <Style x:Key='GB' TargetType='Button'>
         <Setter Property='Background' Value='White'/><Setter Property='Foreground' Value='#555'/>
         <Setter Property='FontSize' Value='12'/><Setter Property='Padding' Value='16,8'/>
@@ -2490,6 +2496,23 @@ public class DepositSeizureApp : Application
             <ControlTemplate.Triggers>
                 <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='Background' Value='#F0F4F8'/></Trigger>
             </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+    <!-- GridViewColumnHeader: フラットデザイン（中央揃え） -->
+    <Style TargetType='GridViewColumnHeader'>
+        <Setter Property='Background' Value='#F5F7FA'/>
+        <Setter Property='Foreground' Value='#888'/>
+        <Setter Property='FontSize' Value='11'/>
+        <Setter Property='Padding' Value='8,8'/>
+        <Setter Property='HorizontalContentAlignment' Value='Center'/>
+        <Setter Property='Template'><Setter.Value>
+            <ControlTemplate TargetType='GridViewColumnHeader'>
+                <Border Background='{TemplateBinding Background}'
+                        BorderBrush='#E8E8E8' BorderThickness='0,0,0,1'
+                        Padding='{TemplateBinding Padding}'>
+                    <ContentPresenter HorizontalAlignment='{TemplateBinding HorizontalContentAlignment}'
+                                      VerticalAlignment='Center'/></Border>
+            </ControlTemplate>
+        </Setter.Value></Setter>
+    </Style>
 </Window.Resources>
 <DockPanel>
     <Border DockPanel.Dock='Top' Background='#005FB8' Padding='18,10'>
@@ -2555,22 +2578,59 @@ public class DepositSeizureApp : Application
                 </StackPanel></Border>
             <!-- 口座選択 -->
             <Border Grid.Row='2' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
-                <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,10'/>
-                    <ListView x:Name='AccountList' BorderThickness='0' Background='Transparent' FontSize='12' SelectionMode='Single'>
+                <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,8'/>
+                    <Border BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='4' ClipToBounds='True'>
+                    <ListView x:Name='AccountList' BorderThickness='0' Background='White' FontSize='12' SelectionMode='Single'>
                         <ListView.ItemContainerStyle>
                             <Style TargetType='ListViewItem'>
                                 <Setter Property='ToolTip' Value='{Binding SeizureTooltip}'/>
                                 <Setter Property='Cursor' Value='Hand'/>
+                                <Setter Property='Foreground' Value='#333'/>
+                                <Setter Property='HorizontalContentAlignment' Value='Stretch'/>
+                                <Setter Property='Padding' Value='0'/>
+                                <Setter Property='Margin' Value='0'/>
+                                <Setter Property='Template'><Setter.Value>
+                                    <ControlTemplate TargetType='ListViewItem'>
+                                        <Grid>
+                                            <Border x:Name='rowBd' Background='White'
+                                                    BorderBrush='#F0F0F0' BorderThickness='0,0,0,1'>
+                                                <GridViewRowPresenter VerticalAlignment='Center'
+                                                    Margin='0,7,0,7'/>
+                                            </Border>
+                                            <Border x:Name='accent' HorizontalAlignment='Left'
+                                                    Width='3' Background='Transparent'/>
+                                        </Grid>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property='IsMouseOver' Value='True'>
+                                                <Setter TargetName='rowBd' Property='Background' Value='#F5F8FC'/></Trigger>
+                                            <Trigger Property='IsSelected' Value='True'>
+                                                <Setter TargetName='accent' Property='Background' Value='#005FB8'/>
+                                                <Setter TargetName='rowBd' Property='Background' Value='#E8F0FE'/></Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value></Setter>
                             </Style>
                         </ListView.ItemContainerStyle>
                         <ListView.View><GridView>
-                            <GridViewColumn Header='支店名' Width='250' DisplayMemberBinding='{Binding BranchName}'/>
-                            <GridViewColumn Header='支店番号' Width='80' DisplayMemberBinding='{Binding BranchNumber}'/>
-                            <GridViewColumn Header='口座種別' Width='90' DisplayMemberBinding='{Binding AccountType}'/>
-                            <GridViewColumn Header='最終取引日(満期日)' Width='120' DisplayMemberBinding='{Binding LastTransaction}'/>
-                            <GridViewColumn Header='口座番号' Width='100' DisplayMemberBinding='{Binding AccountNumDisplay}'/>
-                            <GridViewColumn Header='残高' Width='140' DisplayMemberBinding='{Binding Balance}'/>
-                        </GridView></ListView.View></ListView></DockPanel></Border>
+                            <GridViewColumn Header='支店名' Width='250'>
+                                <GridViewColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text='{Binding BranchName}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+                            <GridViewColumn Header='支店番号' Width='95'>
+                                <GridViewColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text='{Binding BranchNumber}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+                            <GridViewColumn Header='口座種別' Width='110'>
+                                <GridViewColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text='{Binding AccountType}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+                            <GridViewColumn Header='最終取引日(満期日)' Width='150'>
+                                <GridViewColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text='{Binding LastTransaction}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+                            <GridViewColumn Header='口座番号' Width='120'>
+                                <GridViewColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text='{Binding AccountNumDisplay}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+                            <GridViewColumn Header='残高' Width='135'>
+                                <GridViewColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text='{Binding Balance}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+                        </GridView></ListView.View></ListView></Border></DockPanel></Border>
             <!-- アクションボタン -->
             <DockPanel Grid.Row='3'>
                 <Button x:Name='BtnLoadFile' DockPanel.Dock='Left' Style='{StaticResource GB}'><TextBlock Text='ファイルを読み込む'/></Button>
