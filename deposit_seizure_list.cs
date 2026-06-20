@@ -2556,6 +2556,7 @@ public class DepositSeizureApp : Application
 <Window.Resources>
     <!-- TextBox 角丸化（全TextBoxに自動適用） -->
     <Style TargetType='TextBox'>
+        <Setter Property='Foreground' Value='#333'/>
         <Setter Property='Template'><Setter.Value>
             <ControlTemplate TargetType='TextBox'>
                 <Border Background='{TemplateBinding Background}'
@@ -2569,6 +2570,7 @@ public class DepositSeizureApp : Application
     </Style>
     <!-- ComboBox フラットデザイン（TextBoxと統一した白背景＋角丸） -->
     <Style TargetType='ComboBox'>
+        <Setter Property='Foreground' Value='#333'/>
         <Setter Property='Background' Value='White'/>
         <Setter Property='BorderBrush' Value='#D0D0D0'/>
         <Setter Property='BorderThickness' Value='1'/>
@@ -2643,6 +2645,7 @@ public class DepositSeizureApp : Application
             </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
     <!-- CheckBox 青スタイル（チェック時に青背景＋白チェックマーク） -->
     <Style TargetType='CheckBox'>
+        <Setter Property='Foreground' Value='#333'/>
         <Setter Property='Cursor' Value='Hand'/>
         <Setter Property='Template'><Setter.Value>
             <ControlTemplate TargetType='CheckBox'>
