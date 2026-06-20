@@ -727,6 +727,7 @@ public class DepositSeizureApp : Application
     private static readonly SolidColorBrush BrushIconBgSuccess   = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8F5ED"));
     private static readonly SolidColorBrush BrushIconBgError     = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCEBEB"));
     private static readonly SolidColorBrush BrushIconBgSkip      = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E0F2F1"));
+    private static readonly SolidColorBrush BrushDetailMuted     = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#999"));
 
     // --- 定数 ---
     private const int ACCOUNT_TABLE_MAX_ROWS = 200;        // 口座テーブル最大読取り行数
@@ -742,7 +743,7 @@ public class DepositSeizureApp : Application
     private Grid initialPanel, mainPanel, overlayPanel, loadingOverlay, resultOverlay;
     private ComboBox sheetCombo;
     private TextBlock fileLink, statusLeft, statusRight, guideText, deliveryError;
-    private TextBlock resultIcon, resultTitle, resultDocNum, resultDetail, resultSub;
+    private TextBlock resultIcon, resultTitle, resultDetail, resultSub;
     private Border resultIconBg;                 // 結果アイコンの背景円
     private TextBox txtAddressNum, txtName, txtInstitution, txtStaff;
     private TextBox txtResidenceAddr, txtDeliveryAddr, txtExecDate;
@@ -774,6 +775,7 @@ public class DepositSeizureApp : Application
         BrushIconBgSuccess.Freeze();
         BrushIconBgError.Freeze();
         BrushIconBgSkip.Freeze();
+        BrushDetailMuted.Freeze();
 
         var app = new DepositSeizureApp();
         app.StartupArgs = args;
@@ -917,7 +919,6 @@ public class DepositSeizureApp : Application
         resultIcon = (TextBlock)window.FindName("ResultIcon");
         resultIconBg = (Border)window.FindName("ResultIconBg");
         resultTitle = (TextBlock)window.FindName("ResultTitle");
-        resultDocNum = (TextBlock)window.FindName("ResultDocNum");
         resultDetail = (TextBlock)window.FindName("ResultDetail");
         resultButton = (Button)window.FindName("ResultButton");
         resultSub = (TextBlock)window.FindName("ResultSub");
@@ -1183,12 +1184,12 @@ public class DepositSeizureApp : Application
 
     // ローディング→結果カードのクロスフェード切替
     // オーバーレイを一瞬フェードアウト → コンテンツ差替 → フェードイン
-    private void CrossFadeToResult(string type, string title, string docNum, string detail)
+    private void CrossFadeToResult(string type, string title, string detail)
     {
         var fadeOut = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromMilliseconds(100)));
         fadeOut.Completed += delegate
         {
-            ShowResult(type, title, docNum, detail);
+            ShowResult(type, title, detail);
             var fadeIn = new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(100)));
             overlayPanel.BeginAnimation(UIElement.OpacityProperty, fadeIn);
         };
@@ -1251,9 +1252,9 @@ public class DepositSeizureApp : Application
         worker.DoWork += delegate(object s, DoWorkEventArgs args) { args.Result = ReadExcelFile(filePath); };
         worker.RunWorkerCompleted += delegate(object s, RunWorkerCompletedEventArgs args)
         {
-            if (args.Error != null) { CrossFadeToResult("error", "読込失敗", "", args.Error.Message); return; }
+            if (args.Error != null) { CrossFadeToResult("error", "読込失敗", args.Error.Message); return; }
             var data = args.Result as Dictionary<string, object>;
-            if (data != null && data.ContainsKey("error")) { CrossFadeToResult("error", "読込失敗", "", data["error"].ToString()); return; }
+            if (data != null && data.ContainsKey("error")) { CrossFadeToResult("error", "読込失敗", data["error"].ToString()); return; }
             PopulateForm(data);
             FadeOutOverlay();
         };
@@ -1780,7 +1781,7 @@ public class DepositSeizureApp : Application
         {
             if (args.Error != null)
             {
-                CrossFadeToResult("error", "処理失敗", "", args.Error.Message);
+                CrossFadeToResult("error", "処理失敗", args.Error.Message);
                 return;
             }
 
@@ -1789,12 +1790,11 @@ public class DepositSeizureApp : Application
             {
                 fileEntries[currentFileIndex].State = FileProcessState.Added;
                 CrossFadeToResult("success", "一覧に追加しました",
-                    result["docNumber"],
-                    "照会結果を保存しました: " + result["printFile"]);
+                    "文書番号: " + result["docNumber"]);
             }
             else
             {
-                CrossFadeToResult("error", "処理失敗", "", result["message"]);
+                CrossFadeToResult("error", "処理失敗", result["message"]);
             }
         };
         worker.RunWorkerAsync();
@@ -1899,7 +1899,7 @@ public class DepositSeizureApp : Application
         if (currentFileIndex >= 0 && currentFileIndex < fileEntries.Count)
             fileEntries[currentFileIndex].State = FileProcessState.Skipped;
 
-        ShowResult("skip", "スキップしました", "", System.IO.Path.GetFileName(currentFilePath));
+        ShowResult("skip", "スキップしました", System.IO.Path.GetFileName(currentFilePath));
         FadeInOverlay();
     }
 
@@ -1907,34 +1907,37 @@ public class DepositSeizureApp : Application
     // 処理結果オーバーレイ
     // ==============================================================
 
-    private void ShowResult(string type, string title, string docNum, string detail)
+    private void ShowResult(string type, string title, string detail)
     {
         overlayPanel.Visibility = Visibility.Visible; loadingOverlay.Visibility = Visibility.Collapsed; resultOverlay.Visibility = Visibility.Visible;
         resultTitle.Text = title;
-        resultDocNum.Text = !string.IsNullOrEmpty(docNum) ? "文書番号: " + docNum : "";
-        resultDocNum.Visibility = string.IsNullOrEmpty(docNum) ? Visibility.Collapsed : Visibility.Visible;
         resultDetail.Text = detail;
+        resultDetail.Visibility = string.IsNullOrEmpty(detail) ? Visibility.Collapsed : Visibility.Visible;
         bool last = currentFileIndex >= fileEntries.Count - 1;
         if (type == "success")
         {
             resultIcon.Text = "\u2713";
             resultIcon.Foreground = BrushSuccessIcon;
             resultIconBg.Background = BrushIconBgSuccess;
+            resultDetail.Foreground = BrushAccent;
         }
         else if (type == "skip")
         {
             resultIcon.Text = "\u2192";
             resultIcon.Foreground = BrushAccent;
             resultIconBg.Background = BrushIconBgSkip;
+            resultDetail.Foreground = BrushDetailMuted;
         }
         else
         {
             resultIcon.Text = "\u2717";
             resultIcon.Foreground = BrushValidationError;
             resultIconBg.Background = BrushIconBgError;
+            resultDetail.Foreground = BrushValidationError;
         }
         resultButton.Content = last ? "完了" : "次のファイルへ \u2192";
         resultSub.Text = last ? "" : ((currentFileIndex + 2) + " / " + fileEntries.Count + " 件目へ進みます");
+        resultSub.Visibility = last ? Visibility.Collapsed : Visibility.Visible;
     }
 
     // 次のファイルへ進む（オーバーレイをフェードアウトしてから次のインデックスを読み込む）
@@ -2820,17 +2823,16 @@ public class DepositSeizureApp : Application
                     <Path.RenderTransform><RotateTransform/></Path.RenderTransform>
                 </Path></Grid>
             <Grid x:Name='ResultOverlay' Visibility='Collapsed' HorizontalAlignment='Center' VerticalAlignment='Center'>
-                <Border Background='White' CornerRadius='10' Padding='44,32' MinWidth='350'>
+                <Border Background='White' CornerRadius='10' Padding='48,36' MinWidth='350'>
                     <Border.Effect><DropShadowEffect BlurRadius='16' ShadowDepth='4' Opacity='0.12'/></Border.Effect>
                     <StackPanel HorizontalAlignment='Center'>
-                        <Border x:Name='ResultIconBg' Width='52' Height='52' CornerRadius='26' Background='#E8F5ED' HorizontalAlignment='Center' Margin='0,0,0,16'>
-                            <TextBlock x:Name='ResultIcon' Text='&#x2713;' FontSize='28' HorizontalAlignment='Center' VerticalAlignment='Center' Foreground='#107C41'/></Border>
-                        <TextBlock x:Name='ResultTitle' Text='' FontSize='16' FontWeight='Medium' HorizontalAlignment='Center' Margin='0,0,0,6'/>
-                        <TextBlock x:Name='ResultDocNum' FontSize='18' FontWeight='Medium' HorizontalAlignment='Center' Margin='0,0,0,8'/>
-                        <TextBlock x:Name='ResultDetail' FontSize='11' Foreground='#999' HorizontalAlignment='Center' Margin='0,0,0,20'/>
-                        <Button x:Name='ResultButton' Style='{StaticResource AB}' HorizontalAlignment='Center' Padding='24,10'>
+                        <Border x:Name='ResultIconBg' Width='64' Height='64' CornerRadius='32' Background='#E8F5ED' HorizontalAlignment='Center' Margin='0,0,0,20'>
+                            <TextBlock x:Name='ResultIcon' Text='&#x2713;' FontSize='32' HorizontalAlignment='Center' VerticalAlignment='Center' Foreground='#107C41'/></Border>
+                        <TextBlock x:Name='ResultTitle' Text='' FontSize='17' FontWeight='Medium' HorizontalAlignment='Center' Margin='0,0,0,8'/>
+                        <TextBlock x:Name='ResultDetail' FontSize='12' Foreground='#999' HorizontalAlignment='Center' Margin='0,0,0,0'/>
+                        <Button x:Name='ResultButton' Style='{StaticResource AB}' HorizontalAlignment='Center' Padding='24,10' Margin='0,24,0,0'>
                             <TextBlock Text='次のファイルへ' FontSize='13'/></Button>
-                        <TextBlock x:Name='ResultSub' FontSize='11' Foreground='#999' HorizontalAlignment='Center' Margin='0,10,0,0'/>
+                        <TextBlock x:Name='ResultSub' FontSize='11' Foreground='#999' HorizontalAlignment='Center' Margin='0,12,0,0'/>
                     </StackPanel></Border></Grid>
         </Grid>
     </Grid>
