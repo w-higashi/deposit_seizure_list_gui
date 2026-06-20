@@ -1151,6 +1151,20 @@ public class DepositSeizureApp : Application
         overlayPanel.BeginAnimation(UIElement.OpacityProperty, anim);
     }
 
+    // ローディング→結果カードのクロスフェード切替
+    // オーバーレイを一瞬フェードアウト → コンテンツ差替 → フェードイン
+    private void CrossFadeToResult(string type, string title, string docNum, string detail)
+    {
+        var fadeOut = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromMilliseconds(100)));
+        fadeOut.Completed += delegate
+        {
+            ShowResult(type, title, docNum, detail);
+            var fadeIn = new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(100)));
+            overlayPanel.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+        };
+        overlayPanel.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+    }
+
     private void ValidateDelivery()
     {
         if (chkDeliveryOutput.IsChecked == true)
@@ -1207,9 +1221,9 @@ public class DepositSeizureApp : Application
         worker.DoWork += delegate(object s, DoWorkEventArgs args) { args.Result = ReadExcelFile(filePath); };
         worker.RunWorkerCompleted += delegate(object s, RunWorkerCompletedEventArgs args)
         {
-            if (args.Error != null) { ShowResult("error", "読込失敗", "", args.Error.Message); return; }
+            if (args.Error != null) { CrossFadeToResult("error", "読込失敗", "", args.Error.Message); return; }
             var data = args.Result as Dictionary<string, object>;
-            if (data != null && data.ContainsKey("error")) { ShowResult("error", "読込失敗", "", data["error"].ToString()); return; }
+            if (data != null && data.ContainsKey("error")) { CrossFadeToResult("error", "読込失敗", "", data["error"].ToString()); return; }
             PopulateForm(data);
             FadeOutOverlay();
         };
@@ -1736,7 +1750,7 @@ public class DepositSeizureApp : Application
         {
             if (args.Error != null)
             {
-                ShowResult("error", "処理失敗", "", args.Error.Message);
+                CrossFadeToResult("error", "処理失敗", "", args.Error.Message);
                 return;
             }
 
@@ -1744,13 +1758,13 @@ public class DepositSeizureApp : Application
             if (result["status"] == "ok")
             {
                 fileEntries[currentFileIndex].State = FileProcessState.Added;
-                ShowResult("success", "一覧に追加しました",
+                CrossFadeToResult("success", "一覧に追加しました",
                     result["docNumber"],
                     "照会結果を保存しました: " + result["printFile"]);
             }
             else
             {
-                ShowResult("error", "処理失敗", "", result["message"]);
+                CrossFadeToResult("error", "処理失敗", "", result["message"]);
             }
         };
         worker.RunWorkerAsync();
@@ -1856,6 +1870,7 @@ public class DepositSeizureApp : Application
             fileEntries[currentFileIndex].State = FileProcessState.Skipped;
 
         ShowResult("skip", "スキップしました", "", System.IO.Path.GetFileName(currentFilePath));
+        FadeInOverlay();
     }
 
     // ==============================================================
