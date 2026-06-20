@@ -66,7 +66,7 @@ public class ProfileConfig
     public string DeliveryAddressCell { get; set; }      // 届出住所セル
     public string FinancialInstitutionCell { get; set; } // 金融機関名セル
     public string FilterCell { get; set; }               // シートフィルタセル
-    public string FilterValue { get; set; }              // シートフィルタ値（部分一致）
+    public string[] FilterValues { get; set; }             // シートフィルタ値（部分一致、OR条件）
     public int AccountStartRow { get; set; }             // 口座テーブル開始行
     public string BranchNameCol { get; set; }            // 支店名列
     public string BranchNumberCol { get; set; }          // 支店番号列
@@ -119,6 +119,7 @@ public class AccountItem
     public double BalanceValue { get; set; }             // 残高（数値、ソート用）
     public string Balance { get; set; }                  // 残高（表示用、通貨形式）
     public int CoverIndex { get; set; }                  // 所属する表紙ブロックのインデックス
+    public string DeliveryAddressRaw { get; set; }        // 所属する表紙ブロックの届出住所（生値）
     public bool HasSeizureHistory { get; set; }          // 差押実績の有無
     public string SeizureDocNumber { get; set; }         // 差押実績の文書番号（あれば）
 }
@@ -332,8 +333,7 @@ public static class ConfigLoader
                 DeliveryAddressCell      = JsonHelper.GetString(profileJson, "deliveryAddressCell"),
                 FinancialInstitutionCell = JsonHelper.GetString(profileJson, "financialInstitutionCell"),
                 FilterCell               = JsonHelper.GetString(profileJson, "filterCell"),
-                FilterValue              = JsonHelper.GetString(profileJson, "filterValue"),
-                AccountStartRow          = JsonHelper.GetInt(profileJson, "accountStartRow"),
+                AccountStartRow          = JsonHelper.GetInt(profileJson, "accountStartRow", 26),
                 BranchNameCol            = JsonHelper.GetString(profileJson, "branchNameCol"),
                 BranchNumberCol          = JsonHelper.GetString(profileJson, "branchNumberCol"),
                 AccountTypeCol           = JsonHelper.GetString(profileJson, "accountTypeCol"),
@@ -347,6 +347,15 @@ public static class ConfigLoader
             };
             if (p.OutputFolder != null) p.OutputFolder = p.OutputFolder.Replace("\\\\", "\\");
             if (p.PrintFolder != null)  p.PrintFolder  = p.PrintFolder.Replace("\\\\", "\\");
+
+            // filterValue: 文字列または配列をサポート（配列の場合はOR条件）
+            // GetString で文字列として取得を試み、失敗したら GetStringArray で配列として取得
+            string singleFilterValue = JsonHelper.GetString(profileJson, "filterValue");
+            if (singleFilterValue != null)
+                p.FilterValues = new[] { singleFilterValue };
+            else
+                p.FilterValues = JsonHelper.GetStringArray(profileJson, "filterValue");
+
             config.Profiles.Add(p);
         }
 
@@ -704,6 +713,7 @@ public class DepositSeizureApp : Application
     private List<int> stopRows = new List<int>();           // stopValues 検出行
     private DateTime? processingDate = null;                // 執行日（内部保持）
     private bool isFromFileSearch = false;                  // file_search からの遷移か
+    private int lastDisplayedCoverIndex = -1;               // 届出住所の自動更新で使用するカバーインデックス
     private Dictionary<string, string> seizureHistory = new Dictionary<string, string>(); // 差押実績
 
     // --- キャッシュ済みブラシ（ShowResult・バリデーション表示用） ---
@@ -949,7 +959,18 @@ public class DepositSeizureApp : Application
         sheetCombo.SelectionChanged += delegate { if (sheetCombo.SelectedItem != null) { selectedSheetName = sheetCombo.SelectedItem.ToString(); ReloadSheetData(); } };
 
         // 口座選択・執行日・必須フィールドでボタン制御
-        accountList.SelectionChanged += delegate { UpdateAddButton(); };
+        // 口座選択: ボタン制御 + 表紙ブロック変更時に届出住所を自動更新
+        accountList.SelectionChanged += delegate
+        {
+            UpdateAddButton();
+            var selectedAccount = accountList.SelectedItem as AccountItem;
+            if (selectedAccount != null && selectedAccount.CoverIndex != lastDisplayedCoverIndex)
+            {
+                // 異なる表紙ブロックの口座が選択された → 届出住所をその表紙の値に更新
+                lastDisplayedCoverIndex = selectedAccount.CoverIndex;
+                txtDeliveryAddr.Text = BusinessLogic.FormatAddress(selectedAccount.DeliveryAddressRaw ?? "");
+            }
+        };
         txtName.TextChanged += delegate { UpdateAddButton(); };
         txtStaff.TextChanged += delegate { UpdateAddButton(); };
         txtResidenceAddr.TextChanged += delegate { UpdateAddButton(); };
@@ -1078,6 +1099,7 @@ public class DepositSeizureApp : Application
         txtExecDate.Text = ""; processingDate = null;
         chkDeliveryOutput.IsChecked = false;
         deliveryError.Visibility = Visibility.Collapsed;
+        lastDisplayedCoverIndex = -1;
 
         LoadSingleFile(currentFilePath);
     }
@@ -1151,13 +1173,22 @@ public class DepositSeizureApp : Application
                 {
                     string name = (string)ws.Name;
                     if (!string.IsNullOrEmpty(activeProfile.FilterCell) &&
-                        !string.IsNullOrEmpty(activeProfile.FilterValue))
+                        activeProfile.FilterValues != null && activeProfile.FilterValues.Length > 0)
                     {
-                        // filterCell の値に filterValue が部分一致するシートを対象とする
+                        // filterCell の値に filterValues のいずれかが部分一致するシートを対象（OR条件）
                         try
                         {
                             string cellValue = Convert.ToString(ws.Range[activeProfile.FilterCell].Value2 ?? "");
-                            if (cellValue.IndexOf(activeProfile.FilterValue, StringComparison.OrdinalIgnoreCase) >= 0)
+                            bool matches = false;
+                            foreach (var fv in activeProfile.FilterValues)
+                            {
+                                if (cellValue.IndexOf(fv, StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    matches = true;
+                                    break;
+                                }
+                            }
+                            if (matches)
                                 sheets.Add(name);
                         }
                         catch { /* セル読取り失敗時はそのシートをスキップ */ }
@@ -1303,8 +1334,21 @@ public class DepositSeizureApp : Application
                 int startRow = activeProfile.AccountStartRow + coverOffset;
                 int coverIndex = offsets.IndexOf(coverOffset);
 
+                // 各表紙ブロックの届出住所を取得（表紙ごとに異なる可能性があるため）
+                string coverDeliveryAddr = GetCell(ws, activeProfile.DeliveryAddressCell, coverOffset);
+
+                // 次の表紙ブロックの口座テーブル開始行を算出（越境防止）
+                // コンソール版と同様に、次の表紙・stopRow・200行上限の最小値で制限
+                int nextBlockStartRow = (coverIndex + 1 < offsets.Count)
+                    ? activeProfile.AccountStartRow + offsets[coverIndex + 1]
+                    : startRow + ACCOUNT_TABLE_MAX_ROWS;
+
                 for (int r = startRow; r < startRow + ACCOUNT_TABLE_MAX_ROWS; r++)
                 {
+                    // 次の表紙ブロックに到達したら停止（防御的チェック）
+                    if (r >= nextBlockStartRow)
+                        break;
+
                     // stopValues チェック（口座テーブルの終端検出）
                     // ※ stopRowList は表紙ブロック検出時に一括収集済み。
                     //    ここでは口座テーブルの読取り終了判定のみ行う。
@@ -1330,11 +1374,11 @@ public class DepositSeizureApp : Application
                         branchNumber.Trim().All(char.IsDigit);
                     if (!accountNumIsNumeric && !branchNumIsNumeric) continue;
 
-                    // 支店名の取得
+                    // 支店名の取得（内部空白も全て除去。コンソール版と同一の正規化）
                     string branchName = "";
                     try { branchName = Convert.ToString(ws.Range[activeProfile.BranchNameCol + r].Value2 ?? ""); }
                     catch { }
-                    branchName = branchName.Trim();
+                    branchName = branchName.Trim().Replace(" ", "").Replace("\u3000", "");
 
                     // ゆうちょ銀行の場合、支店名が空なら貯金事務センター名で補完
                     if (isYucho && string.IsNullOrWhiteSpace(branchName) && yuchoMapping != null)
@@ -1384,7 +1428,8 @@ public class DepositSeizureApp : Application
                         AccountNum = accountNum.Trim(),
                         BalanceValue = balanceValue,
                         Balance = BusinessLogic.FormatBalance(balanceValue),
-                        CoverIndex = coverIndex
+                        CoverIndex = coverIndex,
+                        DeliveryAddressRaw = coverDeliveryAddr
                     };
 
                     // 差押実績ルックアップ（宛名番号＋口座番号をキーにCSV既存行と照合）
@@ -1475,7 +1520,8 @@ public class DepositSeizureApp : Application
             txtAddressNum.Text = ""; txtName.Text = ""; txtInstitution.Text = "";
             txtStaff.Text = ""; txtResidenceAddr.Text = ""; txtDeliveryAddr.Text = "";
             currentAccounts.Clear(); accountList.ItemsSource = null;
-            guideText.Text = "対象シートがありません（フィルタ条件: " + (activeProfile.FilterValue ?? "") + "）";
+            guideText.Text = "対象シートがありません（フィルタ条件: " +
+                (activeProfile.FilterValues != null ? string.Join(", ", activeProfile.FilterValues) : "") + "）";
             btnAdd.IsEnabled = false; return;
         }
         if (sheetCombo.Items.Count > 0) sheetCombo.SelectedIndex = 0;
@@ -1491,6 +1537,9 @@ public class DepositSeizureApp : Application
         txtStaff.Text = (d["staff"]??"").ToString().Trim();
         txtResidenceAddr.Text = BusinessLogic.FormatAddress((d["residenceAddr"]??"").ToString());
         txtDeliveryAddr.Text = BusinessLogic.FormatAddress((d["deliveryAddr"]??"").ToString());
+        // 届出住所は最初の表紙ブロックの値を初期表示。
+        // 口座選択時に異なる表紙ブロックが選ばれたら自動更新される。
+        lastDisplayedCoverIndex = 0;
         coverOffsets = d["coverOffsets"] as List<int> ?? new List<int>();
         stopRows = d["stopRows"] as List<int> ?? new List<int>();
         currentAccounts = d["accounts"] as List<AccountItem> ?? new List<AccountItem>();
