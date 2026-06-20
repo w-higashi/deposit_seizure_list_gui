@@ -706,6 +706,14 @@ public class DepositSeizureApp : Application
     private bool isFromFileSearch = false;                  // file_search からの遷移か
     private Dictionary<string, string> seizureHistory = new Dictionary<string, string>(); // 差押実績
 
+    // --- キャッシュ済みブラシ（ShowResult・バリデーション表示用） ---
+    // 毎回 new SolidColorBrush するとGC負荷が増えるため、
+    // 静的フィールドで保持し Freeze() で描画スレッドの排他を不要にする
+    private static readonly SolidColorBrush BrushBorderNormal    = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D0D0D0"));
+    private static readonly SolidColorBrush BrushValidationError = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D32F2F"));
+    private static readonly SolidColorBrush BrushSuccessIcon     = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#107C41"));
+    private static readonly SolidColorBrush BrushAccent          = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#005FB8"));
+
     // --- 定数 ---
     private const int ACCOUNT_TABLE_MAX_ROWS = 200;        // 口座テーブル最大読取り行数
     private const int CSV_WRITE_MAX_RETRY = 5;             // CSV書き込みリトライ回数
@@ -739,6 +747,12 @@ public class DepositSeizureApp : Application
     [STAThread]
     public static void Main(string[] args)
     {
+        // ブラシを Freeze して描画パフォーマンスを向上
+        BrushBorderNormal.Freeze();
+        BrushValidationError.Freeze();
+        BrushSuccessIcon.Freeze();
+        BrushAccent.Freeze();
+
         var app = new DepositSeizureApp();
         app.StartupArgs = args;
         app.Run();
@@ -777,6 +791,59 @@ public class DepositSeizureApp : Application
 
         // --- プロファイル選択 ---
         activeProfile = config.Profiles[0]; // 複数時は最初を自動選択
+
+        // --- プロファイルの最低限のバリデーション ---
+        var validationErrors = new List<string>();
+        if (string.IsNullOrWhiteSpace(activeProfile.CoverCell))
+            validationErrors.Add("coverCell が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.CoverValue))
+            validationErrors.Add("coverValue が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.AddressNumberCell))
+            validationErrors.Add("addressNumberCell が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.NameCell))
+            validationErrors.Add("nameCell が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.StaffCell))
+            validationErrors.Add("staffCell が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.ResidenceAddressCell))
+            validationErrors.Add("residenceAddressCell が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.FinancialInstitutionCell))
+            validationErrors.Add("financialInstitutionCell が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.BranchNameCol))
+            validationErrors.Add("branchNameCol が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.AccountNumberCol))
+            validationErrors.Add("accountNumberCol が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.BalanceCol))
+            validationErrors.Add("balanceCol が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.OutputFolder))
+            validationErrors.Add("outputFolder が未設定です");
+        if (string.IsNullOrWhiteSpace(activeProfile.PrintFolder))
+            validationErrors.Add("printFolder が未設定です");
+        if (validationErrors.Count > 0)
+        {
+            MessageBox.Show(
+                "プロファイル「" + activeProfile.Name + "」の設定に問題があります。\n\n" +
+                string.Join("\n", validationErrors.ToArray()),
+                "設定エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
+
+        // --- 出力先フォルダの自動作成 ---
+        try
+        {
+            if (!Directory.Exists(activeProfile.OutputFolder))
+                Directory.CreateDirectory(activeProfile.OutputFolder);
+            if (!Directory.Exists(activeProfile.PrintFolder))
+                Directory.CreateDirectory(activeProfile.PrintFolder);
+        }
+        catch (Exception dirEx)
+        {
+            MessageBox.Show(
+                "出力先フォルダの作成に失敗しました。\n\n" + dirEx.Message,
+                "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
 
         // --- 起動モード判定 ---
         if (StartupArgs != null && StartupArgs.Length > 0)
@@ -891,8 +958,17 @@ public class DepositSeizureApp : Application
             var input = txtExecDate.Text.Trim();
             if (string.IsNullOrEmpty(input)) { processingDate = null; UpdateAddButton(); return; }
             var dt = BusinessLogic.ParseFlexibleDate(input, eraMapping);
-            if (dt.HasValue) { processingDate = dt.Value; txtExecDate.Text = dt.Value.ToString("yyyy/MM/dd"); txtExecDate.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D0D0D0")); }
-            else { processingDate = null; txtExecDate.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D32F2F")); }
+            if (dt.HasValue)
+            {
+                processingDate = dt.Value;
+                txtExecDate.Text = dt.Value.ToString("yyyy/MM/dd");
+                txtExecDate.BorderBrush = BrushBorderNormal;
+            }
+            else
+            {
+                processingDate = null;
+                txtExecDate.BorderBrush = BrushValidationError;
+            }
             UpdateAddButton();
         };
 
@@ -1032,139 +1108,358 @@ public class DepositSeizureApp : Application
     }
 
     // Excel COM でファイルからデータを読み取る
+    // BackgroundWorker から呼ばれるためUIスレッドからは分離されている
     private Dictionary<string, object> ReadExcelFile(string filePath)
     {
         var result = new Dictionary<string, object>();
+
+        // Excel COM の初回起動（アプリ生存期間中インスタンスを保持）
         if (excel == null)
         {
             var t = Type.GetTypeFromProgID("Excel.Application");
-            if (t == null) return new Dictionary<string, object> { { "error", "Excelがインストールされていません" } };
+            if (t == null)
+                return new Dictionary<string, object> { { "error", "Excelがインストールされていません" } };
+
             excel = Activator.CreateInstance(t);
-            excel.Visible = false; excel.DisplayAlerts = false;
-            try { excel.AutomationSecurity = 3; } catch { } // msoAutomationSecurityForceDisable
+            excel.Visible = false;
+            excel.DisplayAlerts = false;
+
+            // マクロ無効化（msoAutomationSecurityForceDisable = 3）
+            try { excel.AutomationSecurity = 3; } catch { }
+
+            // 自動計算を無効化（xlCalculationManual = -4135）
+            // ファイルを開いた際の自動計算による遅延を防止
+            try { excel.Calculation = -4135; } catch { }
+
+            // 画面更新を無効化（非表示なので不要だが、念のため明示的に設定）
+            try { excel.ScreenUpdating = false; } catch { }
+
+            // イベント発火を無効化（マクロ付きファイルの Workbook_Open 等を抑止）
+            try { excel.EnableEvents = false; } catch { }
         }
         dynamic wb = null;
         try
         {
             wb = excel.Workbooks.Open(filePath, 0, true); // 読取専用
-            // シートフィルタ
+
+            // シートフィルタ: filterCell/filterValue で対象シートを絞り込む
             var sheets = new List<string>();
             for (int i = 1; i <= (int)wb.Worksheets.Count; i++)
             {
                 dynamic ws = wb.Worksheets[i];
-                string name = (string)ws.Name;
-                if (!string.IsNullOrEmpty(activeProfile.FilterCell) && !string.IsNullOrEmpty(activeProfile.FilterValue))
+                try
                 {
-                    try { string v = Convert.ToString(ws.Range[activeProfile.FilterCell].Value2 ?? "");
-                          if (v.IndexOf(activeProfile.FilterValue, StringComparison.OrdinalIgnoreCase) >= 0) sheets.Add(name); } catch { }
+                    string name = (string)ws.Name;
+                    if (!string.IsNullOrEmpty(activeProfile.FilterCell) &&
+                        !string.IsNullOrEmpty(activeProfile.FilterValue))
+                    {
+                        // filterCell の値に filterValue が部分一致するシートを対象とする
+                        try
+                        {
+                            string cellValue = Convert.ToString(ws.Range[activeProfile.FilterCell].Value2 ?? "");
+                            if (cellValue.IndexOf(activeProfile.FilterValue, StringComparison.OrdinalIgnoreCase) >= 0)
+                                sheets.Add(name);
+                        }
+                        catch { /* セル読取り失敗時はそのシートをスキップ */ }
+                    }
+                    else
+                    {
+                        // フィルタ未設定時は Visible シートを全て対象
+                        if ((int)ws.Visible == -1) sheets.Add(name);
+                    }
                 }
-                else { if ((int)ws.Visible == -1) sheets.Add(name); }
+                catch { /* シート情報取得失敗は無視 */ }
             }
-            result["sheets"] = sheets; result["filePath"] = filePath; result["fileName"] = System.IO.Path.GetFileName(filePath);
-            if (sheets.Count == 0) { result["noSheet"] = true; try { wb.Close(false); } catch {} wb = null; return result; }
+
+            result["sheets"] = sheets;
+            result["filePath"] = filePath;
+            result["fileName"] = System.IO.Path.GetFileName(filePath);
+
+            // 一致シートが0件の場合
+            if (sheets.Count == 0)
+            {
+                result["noSheet"] = true;
+                try { wb.Close(false); } catch { }
+                wb = null;
+                return result;
+            }
+
             result["selectedSheet"] = sheets[0];
-            try { result["sheetData"] = ReadSheetData(wb, sheets[0]); }
-            catch (Exception rex) { result["error"] = "シートデータの読取りに失敗: " + rex.Message; }
+
+            // 先頭シートのデータを読み取る
+            try
+            {
+                result["sheetData"] = ReadSheetData(wb, sheets[0]);
+            }
+            catch (Exception rex)
+            {
+                result["error"] = "シートデータの読取りに失敗: " + rex.Message;
+            }
         }
         catch (Exception ex) { result["error"] = ex.Message; }
-        finally { if (wb != null) try { wb.Close(false); } catch { } }
+        finally
+        {
+            if (wb != null)
+            {
+                try { wb.Close(false); } catch { }
+                // 注: ReleaseComObject は dynamic late binding 環境では
+                // RPC_E_SERVER_DIED_DNE を引き起こすため使用しない。
+                // ワークブックの解放は CleanupExcel() の GC.Collect で行う。
+            }
+        }
         return result;
     }
 
     // 指定シートから基本情報と口座テーブルを読み取る
+    // 表紙ブロック検出 → 基本情報取得 → 口座テーブル読取り → マッピング補完 の順で処理
     private Dictionary<string, object> ReadSheetData(dynamic wb, string sheetName)
     {
         var data = new Dictionary<string, object>();
         dynamic ws = wb.Worksheets[sheetName];
-        // 表紙ブロック検出
-        var offsets = new List<int>();
+
         try
         {
-            lastUsedRow = (int)ws.UsedRange.Row + (int)ws.UsedRange.Rows.Count - 1;
-            string coverCol = activeProfile.CoverCell.Substring(0, activeProfile.CoverCell.Length - activeProfile.CoverCell.TrimStart(new char[]{'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'}).Length);
-            int ci = 0; while (ci < activeProfile.CoverCell.Length && char.IsLetter(activeProfile.CoverCell[ci])) ci++;
-            coverCol = activeProfile.CoverCell.Substring(0, ci);
-            int coverRow = int.Parse(activeProfile.CoverCell.Substring(ci));
-            for (int r = coverRow; r <= lastUsedRow; r++)
+            // ── 表紙ブロック検出 + stopRows 一括収集 ──
+            // coverCell 列を行1～最終行まで走査し、coverValue / stopValues を同時に検出
+            // コンソール版と同一のアプローチ（全行一括スキャン）
+            var offsets = new List<int>();
+            var stopRowList = new List<int>();
+            try
             {
-                try { string v = Convert.ToString(ws.Range[coverCol + r.ToString()].Value2 ?? "");
-                      if (v.Trim() == activeProfile.CoverValue) offsets.Add(r - coverRow); } catch { }
+                lastUsedRow = (int)ws.UsedRange.Row + (int)ws.UsedRange.Rows.Count - 1;
+
+                // coverCell（例: "A2"）を列部分と行番号に分解
+                int colEndIdx = 0;
+                while (colEndIdx < activeProfile.CoverCell.Length && char.IsLetter(activeProfile.CoverCell[colEndIdx]))
+                    colEndIdx++;
+                string coverCol = activeProfile.CoverCell.Substring(0, colEndIdx);
+                int coverRow = int.Parse(activeProfile.CoverCell.Substring(colEndIdx));
+
+                // coverCell列を全行スキャンして coverOffsets と stopRows を同時に収集
+                for (int r = 1; r <= lastUsedRow; r++)
+                {
+                    try
+                    {
+                        string cellValue = Convert.ToString(ws.Range[coverCol + r.ToString()].Value2 ?? "");
+                        string trimmed = cellValue.Trim();
+
+                        if (trimmed == activeProfile.CoverValue)
+                        {
+                            // 表紙の目印を検出（オフセット = 検出行 - テンプレート上のcoverCell行）
+                            offsets.Add(r - coverRow);
+                        }
+                        else if (activeProfile.StopValues != null && trimmed.Length > 0)
+                        {
+                            // stopValues に一致する行を検出（明細ページヘッダー等）
+                            foreach (var sv in activeProfile.StopValues)
+                            {
+                                if (trimmed == sv)
+                                {
+                                    stopRowList.Add(r);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { /* セル読取り失敗は無視 */ }
+                }
             }
-        } catch { }
-        if (offsets.Count == 0) offsets.Add(0);
-        data["coverOffsets"] = offsets;
+            catch { /* UsedRange 取得失敗時はオフセット0で続行 */ }
 
-        int offset = offsets[0];
-        data["addressNum"] = GetCell(ws, activeProfile.AddressNumberCell, offset);
-        data["name"] = GetCell(ws, activeProfile.NameCell, offset);
-        data["staff"] = GetCell(ws, activeProfile.StaffCell, offset);
-        data["residenceAddr"] = GetCell(ws, activeProfile.ResidenceAddressCell, offset);
-        data["deliveryAddr"] = GetCell(ws, activeProfile.DeliveryAddressCell, offset);
-        string inst = GetCell(ws, activeProfile.FinancialInstitutionCell, offset).Trim();
-        // 金融機関名マッピング補正
-        if (institutionNameMapping != null)
-        {
-            var ni = BusinessLogic.ToFullWidth(inst);
-            foreach (var kv in institutionNameMapping) { if (BusinessLogic.ToFullWidth(kv.Key) == ni) { inst = kv.Value; break; } }
-        }
-        data["institution"] = inst;
+            if (offsets.Count == 0) offsets.Add(0);
+            data["coverOffsets"] = offsets;
 
-        // 口座テーブル読取り
-        var accounts = new List<AccountItem>();
-        var sRows = new List<int>();
-        foreach (var co in offsets)
-        {
-            int startRow = activeProfile.AccountStartRow + co;
-            int cidx = offsets.IndexOf(co);
-            for (int r = startRow; r < startRow + ACCOUNT_TABLE_MAX_ROWS; r++)
+            // ── 基本情報取得（1つ目の表紙から） ──
+            int firstOffset = offsets[0];
+            data["addressNum"] = GetCell(ws, activeProfile.AddressNumberCell, firstOffset);
+            data["name"] = GetCell(ws, activeProfile.NameCell, firstOffset);
+            data["staff"] = GetCell(ws, activeProfile.StaffCell, firstOffset);
+            data["residenceAddr"] = GetCell(ws, activeProfile.ResidenceAddressCell, firstOffset);
+            data["deliveryAddr"] = GetCell(ws, activeProfile.DeliveryAddressCell, firstOffset);
+
+            // 金融機関名の取得とマッピング補正
+            string institution = GetCell(ws, activeProfile.FinancialInstitutionCell, firstOffset).Trim();
+            if (institutionNameMapping != null)
             {
-                // stopValuesチェック
-                bool stopped = false;
-                foreach (var sv in activeProfile.StopValues)
-                { try { string v = Convert.ToString(ws.Range["A" + r].Value2 ?? ""); if (v.Trim() == sv) { sRows.Add(r); stopped = true; } } catch { } }
-                if (stopped) break;
-
-                string accNum = ""; try { accNum = Convert.ToString(ws.Range[activeProfile.AccountNumberCol + r].Value2 ?? ""); } catch { }
-                if (string.IsNullOrWhiteSpace(accNum)) continue;
-                string bn = ""; try { bn = Convert.ToString(ws.Range[activeProfile.BranchNameCol + r].Value2 ?? ""); } catch { }
-                bn = bn.Trim();
-                // ゆうちょ補完
-                string bnum = ""; try { bnum = Convert.ToString(ws.Range[activeProfile.BranchNumberCol + r].Value2 ?? ""); } catch { }
-                bool isYucho = inst.Contains("ゆうちょ") || inst.Contains("郵貯");
-                if (isYucho && string.IsNullOrWhiteSpace(bn) && yuchoMapping != null)
-                { bn = GetYuchoCenter(bnum.Trim()) ?? ""; }
-                if (string.IsNullOrWhiteSpace(bn)) continue; // 支店名空は除外
-                // 支店サフィックス（ゆうちょ以外のみ）
-                if (!isYucho && !string.IsNullOrEmpty(bn) && !IsBranchExempt(bn) && !bn.EndsWith("支店")) bn += "支店";
-
-                string at = ""; try { at = Convert.ToString(ws.Range[activeProfile.AccountTypeCol + r].Value2 ?? ""); } catch { }
-                string lt = ""; try { var lv = ws.Range[activeProfile.LastTransactionCol + r].Value2;
-                    if (lv is double) lt = DateTime.FromOADate((double)lv).ToString("yyyy/MM/dd"); else if (lv != null) lt = lv.ToString(); } catch { }
-                double bv = 0; try { bv = Convert.ToDouble(ws.Range[activeProfile.BalanceCol + r].Value2 ?? 0); } catch { }
-
-                var item = new AccountItem { BranchName=bn, BranchNumber=bnum.Trim(), AccountType=at.Trim(),
-                    LastTransaction=lt, AccountNum=accNum.Trim(), BalanceValue=bv, Balance=BusinessLogic.FormatBalance(bv), CoverIndex=cidx };
-                string hk = BusinessLogic.FormatAddressNumber((data["addressNum"]??"").ToString()) + "_" + item.AccountNum;
-                if (seizureHistory.ContainsKey(hk)) { item.HasSeizureHistory = true; item.SeizureDocNumber = seizureHistory[hk]; }
-                accounts.Add(item);
+                string normalizedInst = BusinessLogic.ToFullWidth(institution);
+                foreach (var kv in institutionNameMapping)
+                {
+                    if (BusinessLogic.ToFullWidth(kv.Key) == normalizedInst)
+                    {
+                        institution = kv.Value;
+                        break;
+                    }
+                }
             }
+            data["institution"] = institution;
+
+            // ── 口座テーブル読取り ──
+            // 各表紙ブロックについて、accountStartRow から stopValues 検出行まで走査
+            var accounts = new List<AccountItem>();
+            bool isYucho = institution.Contains("ゆうちょ") || institution.Contains("郵貯");
+
+            foreach (var coverOffset in offsets)
+            {
+                int startRow = activeProfile.AccountStartRow + coverOffset;
+                int coverIndex = offsets.IndexOf(coverOffset);
+
+                for (int r = startRow; r < startRow + ACCOUNT_TABLE_MAX_ROWS; r++)
+                {
+                    // stopValues チェック（口座テーブルの終端検出）
+                    // ※ stopRowList は表紙ブロック検出時に一括収集済み。
+                    //    ここでは口座テーブルの読取り終了判定のみ行う。
+                    if (stopRowList.Contains(r))
+                        break;
+
+                    // 口座番号の取得
+                    string accountNum = "";
+                    try { accountNum = Convert.ToString(ws.Range[activeProfile.AccountNumberCol + r].Value2 ?? ""); }
+                    catch { }
+                    if (string.IsNullOrWhiteSpace(accountNum)) continue;
+
+                    // 支店番号の取得
+                    string branchNumber = "";
+                    try { branchNumber = Convert.ToString(ws.Range[activeProfile.BranchNumberCol + r].Value2 ?? ""); }
+                    catch { }
+
+                    // 口座番号・支店番号がともに非数値の行はスキップ
+                    // （継続ページのヘッダー行「支店名｜支店番号｜口座種別｜...」を読み飛ばす）
+                    bool accountNumIsNumeric = accountNum.Trim().Length > 0 &&
+                        accountNum.Trim().All(char.IsDigit);
+                    bool branchNumIsNumeric = branchNumber.Trim().Length > 0 &&
+                        branchNumber.Trim().All(char.IsDigit);
+                    if (!accountNumIsNumeric && !branchNumIsNumeric) continue;
+
+                    // 支店名の取得
+                    string branchName = "";
+                    try { branchName = Convert.ToString(ws.Range[activeProfile.BranchNameCol + r].Value2 ?? ""); }
+                    catch { }
+                    branchName = branchName.Trim();
+
+                    // ゆうちょ銀行の場合、支店名が空なら貯金事務センター名で補完
+                    if (isYucho && string.IsNullOrWhiteSpace(branchName) && yuchoMapping != null)
+                    {
+                        branchName = GetYuchoCenter(branchNumber.Trim()) ?? "";
+                    }
+
+                    // 支店名が空の口座は表示しない（GUI版ではダイアログ手入力を廃止）
+                    if (string.IsNullOrWhiteSpace(branchName)) continue;
+
+                    // 支店名「支店」サフィックス付与（ゆうちょ以外のみ）
+                    if (!isYucho && !string.IsNullOrEmpty(branchName) &&
+                        !IsBranchExempt(branchName) && !branchName.EndsWith("支店"))
+                    {
+                        branchName += "支店";
+                    }
+
+                    // 口座種別の取得
+                    string accountType = "";
+                    try { accountType = Convert.ToString(ws.Range[activeProfile.AccountTypeCol + r].Value2 ?? ""); }
+                    catch { }
+
+                    // 最終取引日の取得（Excelシリアル値または文字列に対応）
+                    string lastTransaction = "";
+                    try
+                    {
+                        var lastTransValue = ws.Range[activeProfile.LastTransactionCol + r].Value2;
+                        if (lastTransValue is double)
+                            lastTransaction = DateTime.FromOADate((double)lastTransValue).ToString("yyyy/MM/dd");
+                        else if (lastTransValue != null)
+                            lastTransaction = lastTransValue.ToString();
+                    }
+                    catch { }
+
+                    // 残高の取得
+                    double balanceValue = 0;
+                    try { balanceValue = Convert.ToDouble(ws.Range[activeProfile.BalanceCol + r].Value2 ?? 0); }
+                    catch { }
+
+                    // AccountItem を構築
+                    var item = new AccountItem
+                    {
+                        BranchName = branchName,
+                        BranchNumber = branchNumber.Trim(),
+                        AccountType = accountType.Trim(),
+                        LastTransaction = lastTransaction,
+                        AccountNum = accountNum.Trim(),
+                        BalanceValue = balanceValue,
+                        Balance = BusinessLogic.FormatBalance(balanceValue),
+                        CoverIndex = coverIndex
+                    };
+
+                    // 差押実績ルックアップ（宛名番号＋口座番号をキーにCSV既存行と照合）
+                    string historyKey = BusinessLogic.FormatAddressNumber(
+                        (data["addressNum"] ?? "").ToString()) + "_" + item.AccountNum;
+                    if (seizureHistory.ContainsKey(historyKey))
+                    {
+                        item.HasSeizureHistory = true;
+                        item.SeizureDocNumber = seizureHistory[historyKey];
+                    }
+
+                    accounts.Add(item);
+                }
+            }
+
+            data["accounts"] = accounts;
+            data["stopRows"] = stopRowList;
         }
-        data["accounts"] = accounts; data["stopRows"] = sRows;
+        finally
+        {
+            // 注: ws の ReleaseComObject は dynamic late binding 環境では
+            // Excel COM 接続を切断するため使用しない。
+            // GC.Collect による自然回収に任せる。
+        }
+
         return data;
     }
 
+    // 指定セルの値を文字列として取得（行オフセット対応）
     private string GetCell(dynamic ws, string addr, int offset)
-    { if (string.IsNullOrEmpty(addr)) return ""; try { return Convert.ToString(ws.Range[BusinessLogic.GetOffsetCell(addr, offset)].Value2 ?? ""); } catch { return ""; } }
-
-    private string GetYuchoCenter(string bn)
     {
-        if (yuchoMapping == null || bn.Length != 5) return null;
-        string k = (bn[0] == '1') ? "総合口座" : (bn[0] == '0') ? "振替口座" : null;
-        if (k == null) return null; Dictionary<string, string> t; if (!yuchoMapping.TryGetValue(k, out t)) return null;
-        string c; return t.TryGetValue(bn.Substring(1, 2), out c) ? c : null;
+        if (string.IsNullOrEmpty(addr)) return "";
+        try
+        {
+            string offsetAddr = BusinessLogic.GetOffsetCell(addr, offset);
+            return Convert.ToString(ws.Range[offsetAddr].Value2 ?? "");
+        }
+        catch { return ""; }
     }
 
-    private bool IsBranchExempt(string n) { return n.EndsWith("営業部") || n.EndsWith("出張所") || n.EndsWith("公務部") || n.EndsWith("本店"); }
+    // ゆうちょ銀行の支店番号（記号）から貯金事務センター名を返す
+    // 1桁目: "1"=総合口座, "0"=振替口座、2〜3桁目: 地域コード
+    // 該当なしの場合は null を返す（GUI版では支店名空として表示対象外になる）
+    private string GetYuchoCenter(string branchNumber)
+    {
+        if (yuchoMapping == null || branchNumber.Length != 5)
+            return null;
+
+        // 1桁目で口座種別を判定
+        string accountCategory;
+        if (branchNumber[0] == '1')
+            accountCategory = "総合口座";
+        else if (branchNumber[0] == '0')
+            accountCategory = "振替口座";
+        else
+            return null;
+
+        // 2〜3桁目の地域コードでセンター名を引く
+        Dictionary<string, string> centerTable;
+        if (!yuchoMapping.TryGetValue(accountCategory, out centerTable))
+            return null;
+
+        string center;
+        return centerTable.TryGetValue(branchNumber.Substring(1, 2), out center) ? center : null;
+    }
+
+    // 「支店」サフィックスを付与しない支店名かどうかを判定
+    // 末尾が「営業部」「出張所」「公務部」「本店」で終わる支店名は「支店」を付けない
+    private bool IsBranchExempt(string branchName)
+    {
+        return branchName.EndsWith("営業部") ||
+               branchName.EndsWith("出張所") ||
+               branchName.EndsWith("公務部") ||
+               branchName.EndsWith("本店");
+    }
 
     // フォームにデータ反映
     private void PopulateForm(Dictionary<string, object> data)
@@ -1205,15 +1500,38 @@ public class DepositSeizureApp : Application
         UpdateAddButton();
     }
 
+    // シート切替時にデータを再読み込みする
+    // 現在のファイルを再度開いて、選択中のシートからデータを取得し直す
     private void ReloadSheetData()
     {
         if (excel == null || string.IsNullOrEmpty(currentFilePath)) return;
-        overlayPanel.Visibility = Visibility.Visible; loadingOverlay.Visibility = Visibility.Visible; resultOverlay.Visibility = Visibility.Collapsed;
+
+        // オーバーレイ表示（処理中スピナー）
+        overlayPanel.Visibility = Visibility.Visible;
+        loadingOverlay.Visibility = Visibility.Visible;
+        resultOverlay.Visibility = Visibility.Collapsed;
+
         var worker = new BackgroundWorker();
         worker.DoWork += delegate(object s, DoWorkEventArgs args)
-        { dynamic wb = null; try { wb = excel.Workbooks.Open(currentFilePath, 0, true); args.Result = ReadSheetData(wb, selectedSheetName); } finally { if (wb != null) try { wb.Close(false); } catch {} } };
+        {
+            dynamic wb = null;
+            try
+            {
+                wb = excel.Workbooks.Open(currentFilePath, 0, true);  // 読取専用
+                args.Result = ReadSheetData(wb, selectedSheetName);
+            }
+            finally
+            {
+                if (wb != null)
+                    try { wb.Close(false); } catch { }
+            }
+        };
         worker.RunWorkerCompleted += delegate(object s, RunWorkerCompletedEventArgs args)
-        { overlayPanel.Visibility = Visibility.Collapsed; if (args.Error == null) ApplySheet(args.Result as Dictionary<string, object>); };
+        {
+            overlayPanel.Visibility = Visibility.Collapsed;
+            if (args.Error == null)
+                ApplySheet(args.Result as Dictionary<string, object>);
+        };
         worker.RunWorkerAsync();
     }
 
@@ -1221,57 +1539,183 @@ public class DepositSeizureApp : Application
     // 処理実行（一覧に追加・スキップ）
     // ==============================================================
 
+    // 「一覧に追加」ボタン押下時の処理
+    // バリデーション → UI入力値をDictionaryに収集 → BackgroundWorkerで非同期処理
     private void ExecuteAdd()
     {
-        var sel = accountList.SelectedItem as AccountItem;
-        if (sel == null || !processingDate.HasValue) return;
-        if (chkDeliveryOutput.IsChecked == true && ("（届出：" + txtDeliveryAddr.Text.Trim() + "）").Length > 50)
-        { deliveryError.Visibility = Visibility.Visible; return; }
+        // 口座選択と執行日の最終チェック
+        var selectedAccount = accountList.SelectedItem as AccountItem;
+        if (selectedAccount == null || !processingDate.HasValue) return;
 
-        overlayPanel.Visibility = Visibility.Visible; loadingOverlay.Visibility = Visibility.Visible; resultOverlay.Visibility = Visibility.Collapsed;
-        var d = new Dictionary<string, string> {
-            {"addressNum",txtAddressNum.Text.Trim()},{"name",txtName.Text.Trim()},{"staff",txtStaff.Text.Trim()},
-            {"institution",txtInstitution.Text.Trim()},{"residenceAddr",txtResidenceAddr.Text.Trim()},
-            {"deliveryAddr",chkDeliveryOutput.IsChecked==true?"（届出："+txtDeliveryAddr.Text.Trim()+"）":""},
-            {"execDate",BusinessLogic.DateToWareki(processingDate.Value,eraMapping)},
-            {"branchName",sel.BranchName},{"branchNumber",sel.BranchNumber},
-            {"accountType",sel.AccountType},{"accountNum",sel.AccountNum},
-            {"filePath",currentFilePath},{"fileName",System.IO.Path.GetFileName(currentFilePath)} };
-        int ci = sel.CoverIndex;
+        // 届出住所50文字チェック（チェックONの場合のみ）
+        if (chkDeliveryOutput.IsChecked == true)
+        {
+            string deliveryFull = "（届出：" + txtDeliveryAddr.Text.Trim() + "）";
+            if (deliveryFull.Length > 50)
+            {
+                deliveryError.Visibility = Visibility.Visible;
+                return;
+            }
+        }
+
+        // オーバーレイ表示（処理中スピナー）
+        overlayPanel.Visibility = Visibility.Visible;
+        loadingOverlay.Visibility = Visibility.Visible;
+        resultOverlay.Visibility = Visibility.Collapsed;
+
+        // UI入力値をDictionaryに収集（BackgroundWorkerに渡すため）
+        string deliveryAddr = (chkDeliveryOutput.IsChecked == true)
+            ? "（届出：" + txtDeliveryAddr.Text.Trim() + "）"
+            : "";
+        var addData = new Dictionary<string, string>
+        {
+            { "addressNum",    txtAddressNum.Text.Trim() },
+            { "name",          txtName.Text.Trim() },
+            { "staff",         txtStaff.Text.Trim() },
+            { "institution",   txtInstitution.Text.Trim() },
+            { "residenceAddr", txtResidenceAddr.Text.Trim() },
+            { "deliveryAddr",  deliveryAddr },
+            { "execDate",      BusinessLogic.DateToWareki(processingDate.Value, eraMapping) },
+            { "branchName",    selectedAccount.BranchName },
+            { "branchNumber",  selectedAccount.BranchNumber },
+            { "accountType",   selectedAccount.AccountType },
+            { "accountNum",    selectedAccount.AccountNum },
+            { "filePath",      currentFilePath },
+            { "fileName",      System.IO.Path.GetFileName(currentFilePath) }
+        };
+        int coverIndex = selectedAccount.CoverIndex;
+
+        // BackgroundWorker で非同期実行（Excel COM操作を含むため）
         var worker = new BackgroundWorker();
-        worker.DoWork += delegate(object s, DoWorkEventArgs args) { args.Result = ProcessAdd(d, ci); };
+        worker.DoWork += delegate(object s, DoWorkEventArgs args)
+        {
+            args.Result = ProcessAdd(addData, coverIndex);
+        };
         worker.RunWorkerCompleted += delegate(object s, RunWorkerCompletedEventArgs args)
         {
             overlayPanel.Visibility = Visibility.Collapsed;
-            if (args.Error != null) { ShowResult("error","処理失敗","",args.Error.Message); return; }
-            var r = args.Result as Dictionary<string, string>;
-            if (r["status"]=="ok") { fileEntries[currentFileIndex].State=FileProcessState.Added; ShowResult("success","一覧に追加しました",r["docNumber"],"照会結果を保存しました: "+r["printFile"]); }
-            else ShowResult("error","処理失敗","",r["message"]);
+
+            if (args.Error != null)
+            {
+                ShowResult("error", "処理失敗", "", args.Error.Message);
+                return;
+            }
+
+            var result = args.Result as Dictionary<string, string>;
+            if (result["status"] == "ok")
+            {
+                fileEntries[currentFileIndex].State = FileProcessState.Added;
+                ShowResult("success", "一覧に追加しました",
+                    result["docNumber"],
+                    "照会結果を保存しました: " + result["printFile"]);
+            }
+            else
+            {
+                ShowResult("error", "処理失敗", "", result["message"]);
+            }
         };
         worker.RunWorkerAsync();
     }
 
-    private Dictionary<string, string> ProcessAdd(Dictionary<string, string> d, int coverIdx)
+    // 一覧への追加処理を実行する（BackgroundWorker から呼ばれる）
+    // 処理フロー:
+    //   1. 文書番号の排他ロック採番
+    //   2. 差押文言3行の生成
+    //   3. CSVブランチ名マッピング適用
+    //   4. CSV行の構築（20列、RFC 4180準拠エスケープ）
+    //   5. CSV追記（排他ロック付き FileStream、リトライ最大5回）
+    //   6. 印刷用ファイル保存
+    private Dictionary<string, string> ProcessAdd(Dictionary<string, string> addData, int coverIdx)
     {
-        var r = new Dictionary<string, string>();
-        string docNum; if (!AllocateDocNumber(out docNum)) { r["status"]="error"; r["message"]="文書番号の取得に失敗"; return r; }
-        var st = GenerateSeizureText(d["institution"],d["branchName"],d["branchNumber"],d["accountType"],d["accountNum"]);
-        string csvBranch = d["branchName"];
-        if (branchNameMapping != null) { var ni = BusinessLogic.ToFullWidth(d["institution"]); foreach (var kv in branchNameMapping) if (BusinessLogic.ToFullWidth(kv.Key)==ni) { csvBranch=kv.Value; break; } }
-        string pf = docNum + ".xlsm";
-        var fields = new[] { DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), d["addressNum"],d["name"],d["staff"],d["execDate"],d["residenceAddr"],d["deliveryAddr"],
-            d["institution"],csvBranch,d["branchNumber"],d["accountType"],d["accountNum"], st["Line1"],st["Line2"],st["Line3"], docNum,pf,"","","" };
-        string csvLine = string.Join(",", fields.Select(f => BusinessLogic.CsvEscape(f)));
+        var result = new Dictionary<string, string>();
+
+        // 1. 文書番号の排他ロック採番
+        string docNumber;
+        if (!AllocateDocNumber(out docNumber))
+        {
+            result["status"] = "error";
+            result["message"] = "文書番号の取得に失敗";
+            return result;
+        }
+
+        // 2. 差押文言3行の生成
+        var seizureText = GenerateSeizureText(
+            addData["institution"],
+            addData["branchName"],
+            addData["branchNumber"],
+            addData["accountType"],
+            addData["accountNum"]);
+
+        // 3. CSVブランチ名マッピング適用
+        // 銀行ごとにCSV出力の支店名列を別の文言に置き換える
+        // （差押文言・確認表示には反映せず、CSVの支店名列のみに使用）
+        string csvBranchName = addData["branchName"];
+        if (branchNameMapping != null)
+        {
+            string normalizedInst = BusinessLogic.ToFullWidth(addData["institution"]);
+            foreach (var kv in branchNameMapping)
+            {
+                if (BusinessLogic.ToFullWidth(kv.Key) == normalizedInst)
+                {
+                    csvBranchName = kv.Value;
+                    break;
+                }
+            }
+        }
+
+        // 4. CSV行の構築（20列）
+        string printFileName = docNumber + ".xlsm";
+        var csvFields = new[]
+        {
+            DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"),  // 登録日時
+            addData["addressNum"],                           // 宛名番号
+            addData["name"],                                 // 氏名
+            addData["staff"],                                // 職員名（処分担当）
+            addData["execDate"],                             // 執行日（7桁和暦）
+            addData["residenceAddr"],                        // 住民票住所
+            addData["deliveryAddr"],                          // 銀行届出住所（空 or「（届出：...）」）
+            addData["institution"],                           // 金融機関名
+            csvBranchName,                                    // 支店名（マッピング適用後）
+            addData["branchNumber"],                          // 支店番号
+            addData["accountType"],                           // 口座種別
+            addData["accountNum"],                            // 口座番号
+            seizureText["Line1"],                             // 差押文言1
+            seizureText["Line2"],                             // 差押文言2（振込手数料）
+            seizureText["Line3"],                             // 差押文言3（残高・差押額テンプレ）
+            docNumber,                                        // 文書番号
+            printFileName,                                    // 照会結果ファイル名
+            "",                                               // 処理済フラグ1（空）
+            "",                                               // 処理済フラグ2（空）
+            ""                                                // 処理済フラグ3（空）
+        };
+        string csvLine = string.Join(",", csvFields.Select(f => BusinessLogic.CsvEscape(f)));
+
+        // 5. CSV追記
         string csvPath = System.IO.Path.Combine(activeProfile.OutputFolder, CSV_FILENAME);
-        if (!WriteCsvLine(csvPath, csvLine)) { RollbackDocNumber(); r["status"]="error"; r["message"]="CSV書き込み失敗"; return r; }
-        string pp = System.IO.Path.Combine(activeProfile.PrintFolder, pf);
-        SavePrintFile(d["filePath"], pp, d["accountNum"], d["accountType"], coverIdx);
-        r["status"]="ok"; r["docNumber"]=docNum; r["printFile"]=pf; return r;
+        if (!WriteCsvLine(csvPath, csvLine))
+        {
+            RollbackDocNumber();
+            result["status"] = "error";
+            result["message"] = "CSV書き込み失敗";
+            return result;
+        }
+
+        // 6. 印刷用ファイル保存
+        string printFilePath = System.IO.Path.Combine(activeProfile.PrintFolder, printFileName);
+        SavePrintFile(addData["filePath"], printFilePath, addData["accountNum"], addData["accountType"], coverIdx);
+
+        result["status"] = "ok";
+        result["docNumber"] = docNumber;
+        result["printFile"] = printFileName;
+        return result;
     }
 
+    // 現在のファイルをスキップし、スキップオーバーレイを表示する
     private void ExecuteSkip()
     {
-        if (currentFileIndex >= 0 && currentFileIndex < fileEntries.Count) fileEntries[currentFileIndex].State = FileProcessState.Skipped;
+        if (currentFileIndex >= 0 && currentFileIndex < fileEntries.Count)
+            fileEntries[currentFileIndex].State = FileProcessState.Skipped;
+
         ShowResult("skip", "スキップしました", "", System.IO.Path.GetFileName(currentFilePath));
     }
 
@@ -1287,87 +1731,275 @@ public class DepositSeizureApp : Application
         resultDocNum.Visibility = string.IsNullOrEmpty(docNum) ? Visibility.Collapsed : Visibility.Visible;
         resultDetail.Text = detail;
         bool last = currentFileIndex >= fileEntries.Count - 1;
-        if (type == "success") { resultIcon.Text = "\u2713"; resultIcon.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#107C41")); }
-        else if (type == "skip") { resultIcon.Text = "\u2192"; resultIcon.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#005FB8")); }
-        else { resultIcon.Text = "\u2717"; resultIcon.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D32F2F")); }
+        if (type == "success")
+        {
+            resultIcon.Text = "\u2713";
+            resultIcon.Foreground = BrushSuccessIcon;
+        }
+        else if (type == "skip")
+        {
+            resultIcon.Text = "\u2192";
+            resultIcon.Foreground = BrushAccent;
+        }
+        else
+        {
+            resultIcon.Text = "\u2717";
+            resultIcon.Foreground = BrushValidationError;
+        }
         resultButton.Content = last ? "完了" : "次のファイルへ \u2192";
         resultSub.Text = last ? "" : ((currentFileIndex + 2) + " / " + fileEntries.Count + " 件目へ進みます");
     }
 
-    private void ProceedToNext() { overlayPanel.Visibility = Visibility.Collapsed; LoadFileAtIndex(currentFileIndex + 1); }
+    // 次のファイルへ進む（オーバーレイを閉じて次のインデックスを読み込む）
+    private void ProceedToNext()
+    {
+        overlayPanel.Visibility = Visibility.Collapsed;
+        LoadFileAtIndex(currentFileIndex + 1);
+    }
 
     // ==============================================================
     // 差押文言生成
     // ==============================================================
 
-    private Dictionary<string, string> GenerateSeizureText(string inst, string branch, string branchNum, string accType, string accNum)
+    // 口座情報とマッピング情報から差押文言3行を生成する
+    //
+    // Line1: 滞納者・金融機関・支店・口座種別・口座番号を埋め込んだ差押条項
+    //        ゆうちょ銀行→「記号番号：支店番号－口座番号」形式
+    //        その他     →「口座番号：口座番号」形式
+    // Line2: 振込手数料の文言（マッピングにあればその値、なければ空）
+    // Line3: 「債権差押通知書到達日現在の残高 〜 円 差押額 〜 円」の固定文言
+    private Dictionary<string, string> GenerateSeizureText(
+        string institutionName, string branchName, string branchNumber,
+        string accountType, string accountNumber)
     {
-        var ni = BusinessLogic.ToFullWidth((inst ?? "").Trim());
-        string dat = accType ?? "";
-        if (accountTypeMapping != null) { var m = FindTypeMatch(ni, dat); if (m != null) dat = m; }
-        string fee = "";
-        if (feeMapping != null) foreach (var kv in feeMapping) { if (BusinessLogic.ToFullWidth(kv.Key) == ni) { fee = kv.Value ?? ""; break; } }
-        string fc = !string.IsNullOrEmpty(fee) ? "と手数料の合計額" : "";
-        bool yu = ni == BusinessLogic.ToFullWidth("ゆうちょ銀行");
-        string fa = BusinessLogic.ToFullWidth(accNum.Trim());
-        string l1;
-        if (yu) { string fb = BusinessLogic.ToFullWidth(branchNum.Trim());
-            l1 = "\u3000上記滞納者が、債務者であるゆうちょ銀行（"+branch+"扱）に対して有する"+dat+"（記号番号："+fb+"－"+fa+"）の払戻請求権及びこれに対する債権差押通知書到達日までの約定利息の支払請求権。ただし、滞納金額"+fc+"に充るまでとし、残高が３，０００円未満の場合は差押しない。"; }
-        else { l1 = "\u3000上記滞納者が、債務者である"+ni+"（"+branch.Trim()+"扱）に対して有する"+dat+"（口座番号："+fa+"）の払戻請求権及びこれに対する債権差押通知書到達日までの約定利息の支払請求権。ただし、滞納金額"+fc+"に充るまでとし、残高が３，０００円未満の場合は差押しない。"; }
-        return new Dictionary<string, string> { {"Line1",l1}, {"Line2",fee},
-            {"Line3","債権差押通知書到達日現在の残高\u3000\u3000\u3000\u3000\u3000\u3000円\u3000差押額\u3000\u3000\u3000\u3000\u3000\u3000円"} };
+        // 全角正規化した金融機関名（マッピング照合用・差押文言表示用）
+        string normalizedInst = BusinessLogic.ToFullWidth((institutionName ?? "").Trim());
+
+        // 口座種別の差押文言用表示値を補完
+        // 金融機関固有ルール → global の順で検索、どちらにもなければ元の値
+        string displayAccountType = accountType ?? "";
+        if (accountTypeMapping != null)
+        {
+            string matched = FindAccountTypeMatch(normalizedInst, displayAccountType);
+            if (matched != null)
+                displayAccountType = matched;
+        }
+
+        // 振込手数料の文言を取得
+        string feeText = "";
+        if (feeMapping != null)
+        {
+            foreach (var kv in feeMapping)
+            {
+                if (BusinessLogic.ToFullWidth(kv.Key) == normalizedInst)
+                {
+                    feeText = kv.Value ?? "";
+                    break;
+                }
+            }
+        }
+
+        // 手数料ありの場合、Line1に「と手数料の合計額」を挿入
+        string feeClause = !string.IsNullOrEmpty(feeText) ? "と手数料の合計額" : "";
+
+        // ゆうちょ銀行かどうかの判定
+        bool isYucho = (normalizedInst == BusinessLogic.ToFullWidth("ゆうちょ銀行"));
+        string fullWidthAccountNum = BusinessLogic.ToFullWidth(accountNumber.Trim());
+
+        // Line1 の組み立て
+        string line1;
+        if (isYucho)
+        {
+            // ゆうちょ：記号番号形式
+            string fullWidthBranchNum = BusinessLogic.ToFullWidth(branchNumber.Trim());
+            line1 = "\u3000上記滞納者が、債務者であるゆうちょ銀行（" + branchName + "扱）に対して有する"
+                + displayAccountType + "（記号番号：" + fullWidthBranchNum + "－" + fullWidthAccountNum
+                + "）の払戻請求権及びこれに対する債権差押通知書到達日までの約定利息の支払請求権。ただし、滞納金額"
+                + feeClause + "に充るまでとし、残高が３，０００円未満の場合は差押しない。";
+        }
+        else
+        {
+            // ゆうちょ以外：口座番号形式
+            line1 = "\u3000上記滞納者が、債務者である" + normalizedInst + "（" + branchName.Trim() + "扱）に対して有する"
+                + displayAccountType + "（口座番号：" + fullWidthAccountNum
+                + "）の払戻請求権及びこれに対する債権差押通知書到達日までの約定利息の支払請求権。ただし、滞納金額"
+                + feeClause + "に充るまでとし、残高が３，０００円未満の場合は差押しない。";
+        }
+
+        return new Dictionary<string, string>
+        {
+            { "Line1", line1 },
+            { "Line2", feeText },
+            { "Line3", "債権差押通知書到達日現在の残高\u3000\u3000\u3000\u3000\u3000\u3000円\u3000差押額\u3000\u3000\u3000\u3000\u3000\u3000円" }
+        };
     }
 
-    private string FindTypeMatch(string ni, string at)
+    // 口座種別マッピングから一致するルールを検索する
+    // 検索順序: ① 金融機関固有ルール → ② global ルール → ③ 該当なし(null)
+    private string FindAccountTypeMatch(string normalizedInst, string accountType)
     {
-        foreach (var kv in accountTypeMapping) { if (kv.Key=="global") continue;
-            if (BusinessLogic.ToFullWidth(kv.Key)==ni) { var m=MatchRules(kv.Value,at); if (m!=null) return m; break; } }
-        Dictionary<string,string> g; if (accountTypeMapping.TryGetValue("global",out g)) { var m=MatchRules(g,at); if (m!=null) return m; }
+        // ① 金融機関固有ルールを先に探す
+        foreach (var kv in accountTypeMapping)
+        {
+            if (kv.Key == "global") continue;
+            if (BusinessLogic.ToFullWidth(kv.Key) == normalizedInst)
+            {
+                string matched = MatchAccountTypeRules(kv.Value, accountType);
+                if (matched != null) return matched;
+                break;  // 金融機関が見つかったがルール不一致の場合は global へ
+            }
+        }
+
+        // ② global ルールで引く
+        Dictionary<string, string> globalRules;
+        if (accountTypeMapping.TryGetValue("global", out globalRules))
+        {
+            string matched = MatchAccountTypeRules(globalRules, accountType);
+            if (matched != null) return matched;
+        }
+
         return null;
     }
 
-    private string MatchRules(Dictionary<string,string> rules, string target)
-    { foreach (var kv in rules) { bool w=kv.Key.EndsWith("*"); string p=w?kv.Key.TrimEnd('*'):kv.Key;
-        if (w?target.StartsWith(p):target==kv.Key) return kv.Value; } return null; }
+    // ルール辞書から accountType にマッチする値を探す
+    // キー末尾が「*」なら前方一致、それ以外は完全一致
+    private string MatchAccountTypeRules(Dictionary<string, string> rules, string target)
+    {
+        foreach (var kv in rules)
+        {
+            bool isWildcard = kv.Key.EndsWith("*");
+            string pattern = isWildcard ? kv.Key.TrimEnd('*') : kv.Key;
+
+            if (isWildcard ? target.StartsWith(pattern) : target == kv.Key)
+                return kv.Value;
+        }
+        return null;
+    }
 
     // ==============================================================
     // CSV 操作
     // ==============================================================
 
+    // 差押実績ルックアップテーブルを構築する
+    // 既存CSVから「宛名番号_口座番号 → 文書番号」のハッシュテーブルを作成
+    // 口座テーブルの各行に差押実績マーク（★）を表示するために使用
     private void BuildSeizureHistory()
     {
         seizureHistory.Clear();
         if (activeProfile.OutputFolder == null) return;
-        string p = System.IO.Path.Combine(activeProfile.OutputFolder, CSV_FILENAME);
-        if (!File.Exists(p)) return;
-        try { var lines = File.ReadAllLines(p, Encoding.UTF8);
-            for (int i = 1; i < lines.Length; i++) { var f = ParseCsv(lines[i]);
-                if (f.Length >= 16) seizureHistory[f[1].Trim()+"_"+f[11].Trim()] = f[15].Trim(); } } catch { }
-    }
 
-    private string[] ParseCsv(string line)
-    {
-        var fs = new List<string>(); int p = 0;
-        while (p < line.Length)
+        string csvPath = System.IO.Path.Combine(activeProfile.OutputFolder, CSV_FILENAME);
+        if (!File.Exists(csvPath)) return;
+
+        try
         {
-            if (line[p] == '"') { p++; var sb = new StringBuilder();
-                while (p < line.Length) { if (line[p]=='"') { if (p+1<line.Length&&line[p+1]=='"') { sb.Append('"'); p+=2; } else { p++; break; } } else { sb.Append(line[p]); p++; } }
-                fs.Add(sb.ToString()); if (p < line.Length && line[p]==',') p++; }
-            else { int n = line.IndexOf(',', p); if (n<0) { fs.Add(line.Substring(p)); break; } fs.Add(line.Substring(p, n-p)); p = n+1; }
+            var lines = File.ReadAllLines(csvPath, Encoding.UTF8);
+            for (int i = 1; i < lines.Length; i++)  // ヘッダー行をスキップ
+            {
+                var fields = ParseCsvLine(lines[i]);
+                // f[1]=宛名番号, f[11]=口座番号, f[15]=文書番号
+                if (fields.Length >= 16)
+                {
+                    string key = fields[1].Trim() + "_" + fields[11].Trim();
+                    seizureHistory[key] = fields[15].Trim();  // 後勝ち＝直近の文書番号
+                }
+            }
         }
-        return fs.ToArray();
+        catch { /* CSVがロック中などの場合は実績なしとして続行 */ }
     }
 
-    private bool WriteCsvLine(string path, string line)
+    // CSV行をRFC 4180準拠でパースし、フィールドの配列として返す
+    // ダブルクォートで囲まれたフィールド内のエスケープ（""→"）にも対応
+    private string[] ParseCsvLine(string line)
     {
-        var dir = System.IO.Path.GetDirectoryName(path);
-        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        bool isNew = !File.Exists(path);
-        for (int r = 1; r <= CSV_WRITE_MAX_RETRY; r++)
-        { try { using (var fs = new FileStream(path,FileMode.Append,FileAccess.Write,FileShare.None))
-            using (var sw = new StreamWriter(fs,new UTF8Encoding(true)))
-            { if (isNew) sw.WriteLine(CSV_HEADER); sw.WriteLine(line); sw.Flush(); } return true;
-          } catch { if (r < CSV_WRITE_MAX_RETRY) System.Threading.Thread.Sleep(CSV_WRITE_RETRY_INTERVAL_MS); } }
+        var fields = new List<string>();
+        int pos = 0;
+
+        while (pos < line.Length)
+        {
+            if (line[pos] == '"')
+            {
+                // ダブルクォートで囲まれたフィールド
+                pos++;  // 開始クォートをスキップ
+                var sb = new StringBuilder();
+                while (pos < line.Length)
+                {
+                    if (line[pos] == '"')
+                    {
+                        if (pos + 1 < line.Length && line[pos + 1] == '"')
+                        {
+                            // エスケープされたダブルクォート（"" → "）
+                            sb.Append('"');
+                            pos += 2;
+                        }
+                        else
+                        {
+                            // フィールド終了の閉じクォート
+                            pos++;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        sb.Append(line[pos]);
+                        pos++;
+                    }
+                }
+                fields.Add(sb.ToString());
+                // 閉じクォートの後のカンマをスキップ
+                if (pos < line.Length && line[pos] == ',')
+                    pos++;
+            }
+            else
+            {
+                // 通常フィールド（クォートなし）
+                int nextComma = line.IndexOf(',', pos);
+                if (nextComma < 0)
+                {
+                    fields.Add(line.Substring(pos));
+                    break;
+                }
+                fields.Add(line.Substring(pos, nextComma - pos));
+                pos = nextComma + 1;
+            }
+        }
+
+        return fields.ToArray();
+    }
+
+    // CSV行を追記する（排他ロック付き、リトライ最大5回）
+    // ファイルが存在しない場合はヘッダー行を先に書き込む
+    // エンコーディング: BOM付きUTF-8（WinActor読み込み対応）
+    private bool WriteCsvLine(string csvPath, string csvLine)
+    {
+        var dir = System.IO.Path.GetDirectoryName(csvPath);
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        bool isNewFile = !File.Exists(csvPath);
+
+        for (int retry = 1; retry <= CSV_WRITE_MAX_RETRY; retry++)
+        {
+            try
+            {
+                using (var fileStream = new FileStream(
+                    csvPath, FileMode.Append, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(fileStream, new UTF8Encoding(true)))
+                {
+                    if (isNewFile)
+                        writer.WriteLine(CSV_HEADER);
+                    writer.WriteLine(csvLine);
+                    writer.Flush();
+                }
+                return true;
+            }
+            catch
+            {
+                // リトライ（最後の試行では待たない）
+                if (retry < CSV_WRITE_MAX_RETRY)
+                    System.Threading.Thread.Sleep(CSV_WRITE_RETRY_INTERVAL_MS);
+            }
+        }
         return false;
     }
 
@@ -1375,102 +2007,339 @@ public class DepositSeizureApp : Application
     // 文書番号管理
     // ==============================================================
 
+    // 文書番号を排他ロックで採番する
+    // ファイルを排他ロックしたまま「読む→採番→書き戻す」をアトミックに実行し、
+    // 複数人の同時使用による重複採番を防止する
     private bool AllocateDocNumber(out string docNum)
     {
-        docNum = ""; string cp = System.IO.Path.Combine(exeDir, "document_number_counter.json");
-        for (int r = 1; r <= CSV_WRITE_MAX_RETRY; r++)
-        { try { using (var fs = new FileStream(cp,FileMode.Open,FileAccess.ReadWrite,FileShare.None))
-            { var b = new byte[fs.Length]; fs.Read(b,0,b.Length); var j = Encoding.UTF8.GetString(b).TrimStart('\uFEFF');
-              int n = JsonHelper.GetInt(j,"nextNumber",1); docNum = n.ToString(); lastDocNumber = docNum;
-              fs.Seek(0,SeekOrigin.Begin); fs.SetLength(0);
-              var nb = Encoding.UTF8.GetBytes("{\n    \"nextNumber\":  "+(n+1)+"\n}"); fs.Write(nb,0,nb.Length); } return true;
-          } catch { if (r < CSV_WRITE_MAX_RETRY) System.Threading.Thread.Sleep(CSV_WRITE_RETRY_INTERVAL_MS); } }
+        docNum = "";
+        string counterPath = System.IO.Path.Combine(exeDir, "document_number_counter.json");
+
+        for (int retry = 1; retry <= CSV_WRITE_MAX_RETRY; retry++)
+        {
+            try
+            {
+                using (var fileStream = new FileStream(
+                    counterPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    // 読み込み（BOMがあれば除去）
+                    var bytes = new byte[fileStream.Length];
+                    fileStream.Read(bytes, 0, bytes.Length);
+                    var json = Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
+
+                    // 現在の番号を取得
+                    int nextNumber = JsonHelper.GetInt(json, "nextNumber", 1);
+                    docNum = nextNumber.ToString();
+                    lastDocNumber = docNum;
+
+                    // +1 して書き戻す
+                    fileStream.Seek(0, SeekOrigin.Begin);
+                    fileStream.SetLength(0);
+                    var newBytes = Encoding.UTF8.GetBytes(
+                        "{\n    \"nextNumber\":  " + (nextNumber + 1) + "\n}");
+                    fileStream.Write(newBytes, 0, newBytes.Length);
+                }
+                return true;
+            }
+            catch
+            {
+                if (retry < CSV_WRITE_MAX_RETRY)
+                    System.Threading.Thread.Sleep(CSV_WRITE_RETRY_INTERVAL_MS);
+            }
+        }
         return false;
     }
 
+    // 文書番号カウンターをロールバックする（CSV書き込み失敗時に採番を元に戻す）
     private void RollbackDocNumber()
     {
         if (string.IsNullOrEmpty(lastDocNumber)) return;
-        string cp = System.IO.Path.Combine(exeDir, "document_number_counter.json");
-        for (int r = 1; r <= CSV_WRITE_MAX_RETRY; r++)
-        { try { using (var fs = new FileStream(cp,FileMode.Open,FileAccess.ReadWrite,FileShare.None))
-            { fs.Seek(0,SeekOrigin.Begin); fs.SetLength(0);
-              var b = Encoding.UTF8.GetBytes("{\n    \"nextNumber\":  "+lastDocNumber+"\n}"); fs.Write(b,0,b.Length); } return;
-          } catch { if (r < CSV_WRITE_MAX_RETRY) System.Threading.Thread.Sleep(CSV_WRITE_RETRY_INTERVAL_MS); } }
+        string counterPath = System.IO.Path.Combine(exeDir, "document_number_counter.json");
+
+        for (int retry = 1; retry <= CSV_WRITE_MAX_RETRY; retry++)
+        {
+            try
+            {
+                using (var fileStream = new FileStream(
+                    counterPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    fileStream.Seek(0, SeekOrigin.Begin);
+                    fileStream.SetLength(0);
+                    var bytes = Encoding.UTF8.GetBytes(
+                        "{\n    \"nextNumber\":  " + lastDocNumber + "\n}");
+                    fileStream.Write(bytes, 0, bytes.Length);
+                }
+                return;
+            }
+            catch
+            {
+                if (retry < CSV_WRITE_MAX_RETRY)
+                    System.Threading.Thread.Sleep(CSV_WRITE_RETRY_INTERVAL_MS);
+            }
+        }
     }
 
     // ==============================================================
     // 印刷用ファイル保存
     // ==============================================================
 
-    private void SavePrintFile(string src, string dst, string selAccNum, string selAccType, int selCoverIdx)
+    // 印刷用ファイルを保存する
+    // 処理フロー:
+    //   1. 元ファイルを読み書き可能で開き直し、SaveAs で複製
+    //   2. 選択シート以外を削除（VeryHidden シートは残す）
+    //   3. 複数表紙時: 選択表紙ブロック以外の行を削除
+    //   4. 明細ページ削除（detailAccountNumberCell 設定時）: 選択口座以外の明細を削除
+    //   5. 全ての削除は行番号の大きい順に実行（行ずれ防止）
+    //   6. 表示位置を A1・スクロール先頭にリセット
+    private void SavePrintFile(string sourcePath, string destPath,
+        string selectedAccountNum, string selectedAccountType, int selectedCoverIndex)
     {
-        if (dst.Length > MAX_PATH) return;
-        var dir = System.IO.Path.GetDirectoryName(dst); if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        dynamic pwb = null;
+        // MAX_PATH チェック
+        if (destPath.Length > MAX_PATH) return;
+
+        var destDir = System.IO.Path.GetDirectoryName(destPath);
+        if (!Directory.Exists(destDir))
+            Directory.CreateDirectory(destDir);
+
+        dynamic printWorkbook = null;
         try
         {
-            excel.Visible = false; pwb = excel.Workbooks.Open(src, 0, false);
-            try { if ((bool)pwb.ProtectStructure) pwb.Unprotect(); } catch {}
-            excel.DisplayAlerts = false; pwb.SaveAs(dst, 52); excel.DisplayAlerts = true;
-            try { if ((bool)pwb.ProtectStructure) pwb.Unprotect(); } catch {}
-            // 選択シート以外を削除
+            // 1. 元ファイルを読み書き可能で開き、SaveAs で複製
+            excel.Visible = false;
+            printWorkbook = excel.Workbooks.Open(sourcePath, 0, false);  // 読み書き可能
+
+            // SaveAs 前にブック保護を解除
+            try { if ((bool)printWorkbook.ProtectStructure) printWorkbook.Unprotect(); }
+            catch { /* 保護解除失敗は無視 */ }
+
+            // SaveAs（xlOpenXMLWorkbookMacroEnabled = 52）
             excel.DisplayAlerts = false;
-            for (int j = (int)pwb.Worksheets.Count; j >= 1; j--)
-            { dynamic ws = pwb.Worksheets[j]; if ((int)ws.Visible != -1 && (string)ws.Name != selectedSheetName) try { ws.Delete(); } catch {} }
+            printWorkbook.SaveAs(destPath, 52);
             excel.DisplayAlerts = true;
-            // 削除対象範囲を集約
-            dynamic pws = pwb.Worksheets[selectedSheetName];
-            var delRanges = new List<int[]>();
-            int plr; try { plr = (int)pws.UsedRange.Row + (int)pws.UsedRange.Rows.Count - 1; } catch { plr = lastUsedRow; }
-            int ks, ke;
-            if (coverOffsets.Count > 1) {
-                ks = coverOffsets[selCoverIdx] + 1;
-                ke = (selCoverIdx+1 < coverOffsets.Count) ? coverOffsets[selCoverIdx+1] : plr;
-                if (ke < plr) delRanges.Add(new[]{ke+1, plr});
-                if (ks > 1) delRanges.Add(new[]{1, ks-1});
-            } else { ks = 1; ke = plr; }
-            // 明細ページ削除
-            if (!string.IsNullOrEmpty(activeProfile.DetailAccountNumberCell) && stopRows.Count >= 2)
+
+            // SaveAs 後にも再度ブック保護を解除
+            try { if ((bool)printWorkbook.ProtectStructure) printWorkbook.Unprotect(); }
+            catch { /* 保護解除失敗は無視 */ }
+
+            // 2. 選択シート以外を削除（VeryHidden シートは残す）
+            excel.DisplayAlerts = false;
+            for (int sheetIdx = (int)printWorkbook.Worksheets.Count; sheetIdx >= 1; sheetIdx--)
             {
-                var m = System.Text.RegularExpressions.Regex.Match(activeProfile.DetailAccountNumberCell, @"^([A-Za-z]{1,3})(\d+)$");
-                if (m.Success) {
-                    string dc = m.Groups[1].Value; int dro = int.Parse(m.Groups[2].Value) - 1;
-                    string tc = null; int tro = 0;
-                    if (!string.IsNullOrEmpty(activeProfile.DetailAccountTypeCell)) {
-                        var tm = System.Text.RegularExpressions.Regex.Match(activeProfile.DetailAccountTypeCell, @"^([A-Za-z]{1,3})(\d+)$");
-                        if (tm.Success) { tc = tm.Groups[1].Value; tro = int.Parse(tm.Groups[2].Value) - 1; } }
-                    var rs = stopRows.Where(x => x >= ks && x <= ke).ToList();
-                    if (rs.Count >= 2) {
-                        int pr = rs[1] - rs[0]; int md = rs[0] % pr; int sip = (md==0)?pr:md; int rb = sip - 1;
-                        for (int i = 0; i < rs.Count; i++) {
-                            int ps = rs[i] - rb; int pe = ps + pr - 1;
-                            string av = ""; try { av = Convert.ToString(pws.Range[dc+(rs[i]+dro)].Value2 ?? ""); } catch {}
-                            bool am = av.Trim() == selAccNum;
-                            bool tm2 = true; if (tc != null) { string tv = ""; try { tv = Convert.ToString(pws.Range[tc+(rs[i]+tro)].Value2 ?? ""); } catch {} tm2 = tv.Trim() == selAccType; }
-                            if (!(am && tm2)) delRanges.Add(new[]{ps, pe}); } } } }
-            // 後方から削除
-            delRanges.Sort((a,b) => b[0].CompareTo(a[0]));
-            excel.DisplayAlerts = false;
-            foreach (var rng in delRanges) try { pws.Rows[rng[0]+":"+rng[1]].Delete(); } catch {}
+                dynamic ws = printWorkbook.Worksheets[sheetIdx];
+                try
+                {
+                    // VeryHidden（Visible=2）以外で、選択シート名と異なるシートを削除
+                    // xlSheetVeryHidden = 2（非表示かつマクロからのみ操作可能なシート）
+                    if ((int)ws.Visible != 2 && (string)ws.Name != selectedSheetName)
+                        ws.Delete();
+                }
+                catch { /* シート削除失敗は無視 */ }
+            }
             excel.DisplayAlerts = true;
-            // 表示位置リセット
-            try { pws.Activate(); pwb.Application.ActiveWindow.ScrollRow=1; pwb.Application.ActiveWindow.ScrollColumn=1; pws.Range["A1"].Select(); } catch {}
-            pwb.Save();
+
+            // 3 & 4. 削除対象範囲を集約してから後方からまとめて削除
+            dynamic printSheet = printWorkbook.Worksheets[selectedSheetName];
+            try
+            {
+                var deleteRanges = new List<int[]>();
+
+                // シートの実際の最終行を再取得（SaveAs後に変わる可能性）
+                int printLastRow;
+                try
+                {
+                    printLastRow = (int)printSheet.UsedRange.Row +
+                                   (int)printSheet.UsedRange.Rows.Count - 1;
+                }
+                catch { printLastRow = lastUsedRow; }
+
+                // 選択された表紙ブロックの保持範囲を算出
+                int keepStart, keepEnd;
+                if (coverOffsets.Count > 1)
+                {
+                    keepStart = coverOffsets[selectedCoverIndex] + 1;
+                    keepEnd = (selectedCoverIndex + 1 < coverOffsets.Count)
+                        ? coverOffsets[selectedCoverIndex + 1]
+                        : printLastRow;
+
+                    // 後方ブロック範囲を削除対象に追加
+                    if (keepEnd < printLastRow)
+                        deleteRanges.Add(new[] { keepEnd + 1, printLastRow });
+                    // 前方ブロック範囲を削除対象に追加
+                    if (keepStart > 1)
+                        deleteRanges.Add(new[] { 1, keepStart - 1 });
+                }
+                else
+                {
+                    // 表紙が1つしかない場合はシート全体を保持範囲とする
+                    keepStart = 1;
+                    keepEnd = printLastRow;
+                }
+
+                // 4. 明細ページ削除（detailAccountNumberCell が設定されている場合のみ）
+                // detailAccountNumberCell / detailAccountTypeCell は
+                // 「stopValues セルを A1 起点とした相対座標」として解釈
+                if (!string.IsNullOrEmpty(activeProfile.DetailAccountNumberCell) && stopRows.Count >= 2)
+                {
+                    var detailMatch = System.Text.RegularExpressions.Regex.Match(
+                        activeProfile.DetailAccountNumberCell, @"^([A-Za-z]{1,3})(\d+)$");
+                    if (detailMatch.Success)
+                    {
+                        string detailCol = detailMatch.Groups[1].Value;
+                        int detailRowOffset = int.Parse(detailMatch.Groups[2].Value) - 1;
+
+                        // 口座種別セルの設定（任意）
+                        string typeCol = null;
+                        int typeRowOffset = 0;
+                        if (!string.IsNullOrEmpty(activeProfile.DetailAccountTypeCell))
+                        {
+                            var typeMatch = System.Text.RegularExpressions.Regex.Match(
+                                activeProfile.DetailAccountTypeCell, @"^([A-Za-z]{1,3})(\d+)$");
+                            if (typeMatch.Success)
+                            {
+                                typeCol = typeMatch.Groups[1].Value;
+                                typeRowOffset = int.Parse(typeMatch.Groups[2].Value) - 1;
+                            }
+                        }
+
+                        // 保持範囲内の stopRows のみを対象
+                        var relevantStopRows = stopRows
+                            .Where(x => x >= keepStart && x <= keepEnd).ToList();
+
+                        if (relevantStopRows.Count >= 2)
+                        {
+                            // ページサイズを算出（2つのstopRows間の行数）
+                            int pageRows = relevantStopRows[1] - relevantStopRows[0];
+
+                            // stopValues セルがページ内の何行目にあるかを剰余から動的に算出
+                            int modResult = relevantStopRows[0] % pageRows;
+                            int stopValueRowInPage = (modResult == 0) ? pageRows : modResult;
+                            int rowsBeforeStopValue = stopValueRowInPage - 1;
+
+                            for (int i = 0; i < relevantStopRows.Count; i++)
+                            {
+                                int pageStart = relevantStopRows[i] - rowsBeforeStopValue;
+                                int pageEnd = pageStart + pageRows - 1;
+
+                                // 口座番号セルの読み取り
+                                string accountNumValue = "";
+                                try
+                                {
+                                    accountNumValue = Convert.ToString(
+                                        printSheet.Range[detailCol + (relevantStopRows[i] + detailRowOffset)].Value2 ?? "");
+                                }
+                                catch { /* セル読み取り失敗時はデフォルト値を使用 */ }
+                                bool accountNumMatches = (accountNumValue.Trim() == selectedAccountNum);
+
+                                // 口座種別セルの読み取り（設定されている場合のみ）
+                                bool accountTypeMatches = true;
+                                if (typeCol != null)
+                                {
+                                    string typeValue = "";
+                                    try
+                                    {
+                                        typeValue = Convert.ToString(
+                                            printSheet.Range[typeCol + (relevantStopRows[i] + typeRowOffset)].Value2 ?? "");
+                                    }
+                                    catch { /* セル読み取り失敗時はデフォルト値を使用 */ }
+                                    accountTypeMatches = (typeValue.Trim() == selectedAccountType);
+                                }
+
+                                // 口座番号と口座種別の両方が一致した場合のみ残す
+                                if (!(accountNumMatches && accountTypeMatches))
+                                    deleteRanges.Add(new[] { pageStart, pageEnd });
+                            }
+                        }
+                    }
+                }
+
+                // 行が大きい順にソートして削除（行ずれ防止）
+                deleteRanges.Sort((a, b) => b[0].CompareTo(a[0]));
+                excel.DisplayAlerts = false;
+                foreach (var range in deleteRanges)
+                {
+                    try
+                    {
+                        printSheet.Rows[range[0] + ":" + range[1]].Delete();
+                    }
+                    catch { /* 行削除失敗は無視 */ }
+                }
+                excel.DisplayAlerts = true;
+
+                // 表示位置を A1・スクロール先頭にリセット
+                try
+                {
+                    printSheet.Activate();
+                    printWorkbook.Application.ActiveWindow.ScrollRow = 1;
+                    printWorkbook.Application.ActiveWindow.ScrollColumn = 1;
+                    printSheet.Range["A1"].Select();
+                }
+                catch { /* 表示位置リセット失敗は無視 */ }
+            }
+            finally
+            {
+                // printSheet の ReleaseComObject は使用しない（dynamic環境のCOM安定性のため）
+            }
+
+            printWorkbook.Save();
         }
-        catch { /* 保存失敗は警告のみ */ }
-        finally { if (pwb != null) try { pwb.Close(false); } catch {} }
+        catch { /* 保存失敗は警告のみ（CSVには既に追記済み） */ }
+        finally
+        {
+            if (printWorkbook != null)
+                try { printWorkbook.Close(false); } catch { }
+        }
     }
 
     // ==============================================================
     // Excel COM クリーンアップ
     // ==============================================================
 
+    // COMオブジェクトを安全に1回解放する（参照カウントを1つ減らす）
+    // C# の dynamic late binding では通常1回の ReleaseComObject で十分。
+    // PowerShell版のようなループ解放は、PSランタイムが暗黙的に参照カウントを
+    // 増やす問題への対処であり、C#では不要。
+    private void ReleaseComSafe(object obj)
+    {
+        if (obj == null) return;
+        try { Marshal.ReleaseComObject(obj); }
+        catch { /* COM分離済みの場合は無視 */ }
+    }
+
+    // アプリ終了時にExcelプロセスを完全に解放する
+    // excel インスタンスはアプリ生存期間中保持し、ファイルごとの起動/終了は行わない設計
     private void CleanupExcel()
     {
         if (excel == null) return;
-        try { excel.Quit(); Marshal.ReleaseComObject(excel); } catch {}
-        finally { excel = null; GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); }
+        try
+        {
+            // 開いたままのワークブックがあれば全て閉じる
+            try
+            {
+                while ((int)excel.Workbooks.Count > 0)
+                {
+                    dynamic wb = excel.Workbooks[1];
+                    try { wb.Close(false); } catch { }
+                }
+            }
+            catch { /* Workbooks アクセス失敗は無視 */ }
+
+            // 元の設定を復元してから終了
+            try { excel.ScreenUpdating = true; } catch { }
+            try { excel.DisplayAlerts = true; } catch { }
+
+            excel.Quit();
+            ReleaseComSafe(excel);
+        }
+        catch { /* Quit 失敗は無視 */ }
+        finally
+        {
+            excel = null;
+            // GC を2回呼び出して COM の Release を確実に完了させる
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
     }
 
     // ==============================================================
