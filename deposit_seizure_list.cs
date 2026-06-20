@@ -744,6 +744,9 @@ public class DepositSeizureApp : Application
     private CheckBox chkDeliveryOutput;
     private ListView accountList;
     private Button btnAdd, btnSkip, btnLoadFile, resultButton;
+    private Button btnCalendar;                // カレンダーPopup表示ボタン
+    private Popup calendarPopup;               // カレンダーPopup
+    private System.Windows.Controls.Calendar dateCalendar;  // カレンダーコントロール
     private dynamic excel;               // Excel.Application（COM late binding）
     private string currentFilePath;      // 現在処理中のファイルパス
     private string selectedSheetName;    // 選択中のシート名
@@ -908,6 +911,9 @@ public class DepositSeizureApp : Application
         resultDetail = (TextBlock)window.FindName("ResultDetail");
         resultButton = (Button)window.FindName("ResultButton");
         resultSub = (TextBlock)window.FindName("ResultSub");
+        btnCalendar = (Button)window.FindName("BtnCalendar");
+        calendarPopup = (Popup)window.FindName("CalendarPopup");
+        dateCalendar = (System.Windows.Controls.Calendar)window.FindName("DateCalendar");
     }
 
     private void InitializeUI()
@@ -998,6 +1004,25 @@ public class DepositSeizureApp : Application
         chkDeliveryOutput.Checked += delegate { ValidateDelivery(); };
         chkDeliveryOutput.Unchecked += delegate { ValidateDelivery(); };
 
+        // カレンダーPopup
+        btnCalendar.Click += delegate
+        {
+            calendarPopup.PlacementTarget = btnCalendar;
+            calendarPopup.IsOpen = !calendarPopup.IsOpen;
+        };
+        dateCalendar.SelectedDatesChanged += delegate
+        {
+            if (dateCalendar.SelectedDate.HasValue)
+            {
+                var selectedDate = dateCalendar.SelectedDate.Value;
+                processingDate = selectedDate;
+                txtExecDate.Text = selectedDate.ToString("yyyy/MM/dd");
+                txtExecDate.BorderBrush = BrushBorderNormal;
+                calendarPopup.IsOpen = false;
+                UpdateAddButton();
+            }
+        };
+
         // アクション
         btnAdd.Click += delegate { ExecuteAdd(); };
         btnSkip.Click += delegate { ExecuteSkip(); };
@@ -1057,7 +1082,7 @@ public class DepositSeizureApp : Application
         double col2 = 110;  // 口座種別
         double col3 = 150;  // 最終取引日(満期日)
         double col4 = 120;  // 口座番号
-        double col5 = 135;  // 残高
+        double col5 = 145;  // 残高
         double branchW = total - col1 - col2 - col3 - col4 - col5;
         if (branchW < 120) branchW = 120;
 
@@ -2496,6 +2521,29 @@ public class DepositSeizureApp : Application
             <ControlTemplate.Triggers>
                 <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='Background' Value='#F0F4F8'/></Trigger>
             </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+    <!-- CheckBox 青スタイル（チェック時に青背景＋白チェックマーク） -->
+    <Style TargetType='CheckBox'>
+        <Setter Property='Cursor' Value='Hand'/>
+        <Setter Property='Template'><Setter.Value>
+            <ControlTemplate TargetType='CheckBox'>
+                <StackPanel Orientation='Horizontal'>
+                    <Border x:Name='cbBox' Width='16' Height='16' CornerRadius='3'
+                            Background='White' BorderBrush='#C8C8C8' BorderThickness='1'
+                            VerticalAlignment='Center' Margin='0,0,6,0'>
+                        <Path x:Name='cbCheck' Data='M2.5,7 L5.5,10 L11.5,3.5' Stroke='White'
+                              StrokeThickness='2' Visibility='Collapsed'/></Border>
+                    <ContentPresenter VerticalAlignment='Center'/></StackPanel>
+                <ControlTemplate.Triggers>
+                    <Trigger Property='IsChecked' Value='True'>
+                        <Setter TargetName='cbBox' Property='Background' Value='#005FB8'/>
+                        <Setter TargetName='cbBox' Property='BorderBrush' Value='#005FB8'/>
+                        <Setter TargetName='cbCheck' Property='Visibility' Value='Visible'/></Trigger>
+                    <Trigger Property='IsMouseOver' Value='True'>
+                        <Setter TargetName='cbBox' Property='BorderBrush' Value='#005FB8'/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value></Setter>
+    </Style>
     <!-- GridViewColumnHeader: フラットデザイン（中央揃え） -->
     <Style TargetType='GridViewColumnHeader'>
         <Setter Property='Background' Value='#F5F7FA'/>
@@ -2555,7 +2603,9 @@ public class DepositSeizureApp : Application
             <Border Grid.Row='1' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
                 <StackPanel><TextBlock Text='&#x1F464; 基本情報' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,10'/>
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height='Auto'/><RowDefinition Height='6'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height='Auto'/><RowDefinition Height='6'/>
+                        <RowDefinition Height='Auto'/><RowDefinition Height='6'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
+                    <!-- 1行目: 宛名番号+氏名 | 金融機関+処分担当 -->
                     <Grid Grid.Row='0' Grid.Column='0'><Grid.ColumnDefinitions><ColumnDefinition Width='120'/><ColumnDefinition Width='8'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
                         <StackPanel><TextBlock Text='宛名番号' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
                             <TextBox x:Name='TxtAddressNum' IsReadOnly='True' Background='#F3F3F3' BorderBrush='#E8E8E8' FontFamily='Consolas' FontSize='12' Padding='5,4'/></StackPanel>
@@ -2566,16 +2616,28 @@ public class DepositSeizureApp : Application
                             <TextBox x:Name='TxtInstitution' IsReadOnly='True' Background='#F3F3F3' BorderBrush='#E8E8E8' FontSize='12' Padding='5,4'/></StackPanel>
                         <StackPanel Grid.Column='2'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>処分担当 &#x270E;</TextBlock>
                             <TextBox x:Name='TxtStaff' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/></StackPanel></Grid>
+                    <!-- 2行目: 住民票住所 | 届出住所+バリデーション -->
                     <StackPanel Grid.Row='2' Grid.Column='0'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>住民票住所 &#x270E;</TextBlock>
                         <TextBox x:Name='TxtResidenceAddr' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/></StackPanel>
                     <StackPanel Grid.Row='2' Grid.Column='2'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>届出住所 &#x270E;</TextBlock>
                         <TextBox x:Name='TxtDeliveryAddr' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/>
-                        <CheckBox x:Name='ChkDeliveryOutput' Content='差押通知書に出力する' FontSize='11' Margin='0,3,0,0'/>
                         <TextBlock x:Name='DeliveryError' Foreground='#D32F2F' FontSize='10' Visibility='Collapsed' Margin='0,1,0,0'/></StackPanel>
-                </Grid>
-                <StackPanel Margin='0,6,0,0'><TextBlock Text='執行日' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
-                    <TextBox x:Name='TxtExecDate' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0' Width='150' HorizontalAlignment='Left'/></StackPanel>
-                </StackPanel></Border>
+                    <!-- 3行目: 執行日+カレンダー | チェックボックス -->
+                    <StackPanel Grid.Row='4' Grid.Column='0'><TextBlock Text='執行日' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
+                        <StackPanel Orientation='Horizontal'>
+                            <TextBox x:Name='TxtExecDate' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0' FontFamily='Consolas' Width='150'/>
+                            <Button x:Name='BtnCalendar' Style='{StaticResource GB}' Padding='6,4' Margin='4,0,0,0'>
+                                <TextBlock Text='&#x1F4C5;' FontSize='13'/></Button>
+                            <Popup x:Name='CalendarPopup' StaysOpen='False' Placement='Bottom' AllowsTransparency='True'>
+                                <Border Background='White' BorderBrush='#D0D0D0' BorderThickness='1'
+                                        CornerRadius='6' Padding='8' Margin='0,4,0,0'>
+                                    <Border.Effect><DropShadowEffect BlurRadius='12' ShadowDepth='3' Opacity='0.15'/></Border.Effect>
+                                    <Calendar x:Name='DateCalendar' SelectionMode='SingleDate'/></Border>
+                            </Popup>
+                        </StackPanel></StackPanel>
+                    <StackPanel Grid.Row='4' Grid.Column='2' VerticalAlignment='Top' Margin='0,18,0,0'>
+                        <CheckBox x:Name='ChkDeliveryOutput' Content='届出住所を差押通知書に出力する' FontSize='11'/></StackPanel>
+                </Grid></StackPanel></Border>
             <!-- 口座選択 -->
             <Border Grid.Row='2' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
                 <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,8'/>
@@ -2627,7 +2689,7 @@ public class DepositSeizureApp : Application
                             <GridViewColumn Header='口座番号' Width='120'>
                                 <GridViewColumn.CellTemplate><DataTemplate>
                                     <TextBlock Text='{Binding AccountNumDisplay}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
-                            <GridViewColumn Header='残高' Width='135'>
+                            <GridViewColumn Header='残高' Width='145'>
                                 <GridViewColumn.CellTemplate><DataTemplate>
                                     <TextBlock Text='{Binding Balance}' HorizontalAlignment='Center'/></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
                         </GridView></ListView.View></ListView></Border></DockPanel></Border>
