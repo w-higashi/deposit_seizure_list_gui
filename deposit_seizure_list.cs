@@ -946,6 +946,7 @@ public class DepositSeizureApp : Application
         overlayPanel.Visibility = (state == "loading" || state == "result") ? Visibility.Visible : Visibility.Collapsed;
         loadingOverlay.Visibility = state == "loading" ? Visibility.Visible : Visibility.Collapsed;
         resultOverlay.Visibility = state == "result" ? Visibility.Visible : Visibility.Collapsed;
+        if (state == "initial") statusLeft.Text = "";
     }
 
     // ==============================================================
@@ -1225,7 +1226,7 @@ public class DepositSeizureApp : Application
     {
         if (index >= fileEntries.Count) { if (isFromFileSearch) Shutdown(); else ShowState("initial"); return; }
         currentFileIndex = index; currentFilePath = fileEntries[index].FilePath;
-        if (fileEntries.Count > 1) statusLeft.Text = (index + 1) + " / " + fileEntries.Count + " 件目";
+        statusLeft.Text = fileEntries.Count > 1 ? (index + 1) + " / " + fileEntries.Count + " 件目" : "";
 
         // 新しいファイルに切り替わるとき、執行日と届出住所チェックをリセット
         txtExecDate.Text = ""; processingDate = null;
