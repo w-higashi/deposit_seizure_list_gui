@@ -715,6 +715,7 @@ public class DepositSeizureApp : Application
     private bool isFromFileSearch = false;                  // file_search からの遷移か
     private int lastDisplayedCoverIndex = -1;               // 届出住所の自動更新で使用するカバーインデックス
     private Dictionary<string, string> seizureHistory = new Dictionary<string, string>(); // 差押実績
+    private bool suppressSheetChange = false;               // PopulateForm中のSelectionChanged抑止
 
     // --- キャッシュ済みブラシ（ShowResult・バリデーション表示用） ---
     // 毎回 new SolidColorBrush するとGC負荷が増えるため、
@@ -747,6 +748,7 @@ public class DepositSeizureApp : Application
     private Button btnCalendar;                // カレンダーPopup表示ボタン
     private Popup calendarPopup;               // カレンダーPopup
     private System.Windows.Controls.Calendar dateCalendar;  // カレンダーコントロール
+    private RotateTransform spinnerRotation;  // スピナーの回転トランスフォーム
     private dynamic excel;               // Excel.Application（COM late binding）
     private string currentFilePath;      // 現在処理中のファイルパス
     private string selectedSheetName;    // 選択中のシート名
@@ -914,6 +916,11 @@ public class DepositSeizureApp : Application
         btnCalendar = (Button)window.FindName("BtnCalendar");
         calendarPopup = (Popup)window.FindName("CalendarPopup");
         dateCalendar = (System.Windows.Controls.Calendar)window.FindName("DateCalendar");
+
+        // スピナーの RotateTransform を取得（C#側でアニメーション制御するため）
+        var spinnerElement = (FrameworkElement)window.FindName("SpinnerPath");
+        if (spinnerElement != null)
+            spinnerRotation = spinnerElement.RenderTransform as RotateTransform;
     }
 
     private void InitializeUI()
@@ -961,8 +968,8 @@ public class DepositSeizureApp : Application
         var btnReload = (Button)window.FindName("BtnReload");
         if (btnReload != null) btnReload.Click += delegate { if (!string.IsNullOrEmpty(currentFilePath)) LoadSingleFile(currentFilePath); };
 
-        // シート切替
-        sheetCombo.SelectionChanged += delegate { if (sheetCombo.SelectedItem != null) { selectedSheetName = sheetCombo.SelectedItem.ToString(); ReloadSheetData(); } };
+        // シート切替（PopulateForm 内での初期選択時は抑止）
+        sheetCombo.SelectionChanged += delegate { if (!suppressSheetChange && sheetCombo.SelectedItem != null) { selectedSheetName = sheetCombo.SelectedItem.ToString(); ReloadSheetData(); } };
 
         // 口座選択・執行日・必須フィールドでボタン制御
         // 口座選択: ボタン制御 + 表紙ブロック変更時に届出住所を自動更新
@@ -1047,6 +1054,13 @@ public class DepositSeizureApp : Application
         // 口座テーブルの列幅自動調整
         accountList.SizeChanged += delegate { AdjustAccountColumns(); };
         accountList.Loaded += delegate { AdjustAccountColumns(); };
+
+        // スピナーアニメーション: LoadingOverlay の表示/非表示に連動
+        loadingOverlay.IsVisibleChanged += delegate(object s, DependencyPropertyChangedEventArgs dpce)
+        {
+            if ((bool)dpce.NewValue) StartSpinner();
+            else StopSpinner();
+        };
     }
 
     private void UpdateAddButton()
@@ -1092,6 +1106,25 @@ public class DepositSeizureApp : Application
         gv.Columns[3].Width = col3;
         gv.Columns[4].Width = col4;
         gv.Columns[5].Width = col5;
+    }
+
+    // スピナー回転アニメーションを開始
+    // By 方式（現在値に加算）で 360→0 リセットのカクつきを回避
+    private void StartSpinner()
+    {
+        if (spinnerRotation == null) return;
+        var anim = new DoubleAnimation();
+        anim.By = 360;
+        anim.Duration = new Duration(TimeSpan.FromSeconds(1));
+        anim.RepeatBehavior = RepeatBehavior.Forever;
+        spinnerRotation.BeginAnimation(RotateTransform.AngleProperty, anim);
+    }
+
+    // スピナー回転アニメーションを停止
+    private void StopSpinner()
+    {
+        if (spinnerRotation == null) return;
+        spinnerRotation.BeginAnimation(RotateTransform.AngleProperty, null);
     }
 
     private void ValidateDelivery()
@@ -1554,7 +1587,12 @@ public class DepositSeizureApp : Application
                 (activeProfile.FilterValues != null ? string.Join(", ", activeProfile.FilterValues) : "") + "）";
             btnAdd.IsEnabled = false; return;
         }
+        // 初期選択時は SelectionChanged による ReloadSheetData を抑止
+        // （ReadExcelFile で既にシートデータを読み取り済みのため二重読込を回避）
+        suppressSheetChange = true;
         if (sheetCombo.Items.Count > 0) sheetCombo.SelectedIndex = 0;
+        suppressSheetChange = false;
+        if (sheetCombo.SelectedItem != null) selectedSheetName = sheetCombo.SelectedItem.ToString();
         if (data.ContainsKey("sheetData")) ApplySheet(data["sheetData"] as Dictionary<string, object>);
     }
 
@@ -2705,8 +2743,13 @@ public class DepositSeizureApp : Application
         <!-- オーバーレイ -->
         <Grid x:Name='OverlayPanel' Visibility='Collapsed' Background='#CCFFFFFF'>
             <Grid x:Name='LoadingOverlay' Visibility='Collapsed' HorizontalAlignment='Center' VerticalAlignment='Center'>
-                <Border Width='60' Height='60' CornerRadius='30' Background='#005FB8'>
-                    <TextBlock Text='...' FontSize='20' Foreground='White' HorizontalAlignment='Center' VerticalAlignment='Center'/></Border></Grid>
+                <Path x:Name='SpinnerPath' Data='M 20,2 A 18,18 0 1 1 2,20'
+                      Stroke='#005FB8' StrokeThickness='3'
+                      StrokeStartLineCap='Round' StrokeEndLineCap='Round'
+                      Width='40' Height='40' Stretch='None'
+                      RenderTransformOrigin='0.5,0.5'>
+                    <Path.RenderTransform><RotateTransform/></Path.RenderTransform>
+                </Path></Grid>
             <Grid x:Name='ResultOverlay' Visibility='Collapsed' HorizontalAlignment='Center' VerticalAlignment='Center'>
                 <Border Background='White' CornerRadius='10' Padding='44,32' MinWidth='350'>
                     <Border.Effect><DropShadowEffect BlurRadius='16' ShadowDepth='4' Opacity='0.12'/></Border.Effect>
