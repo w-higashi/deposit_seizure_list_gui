@@ -45,7 +45,6 @@ using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Xml;
 
 // ==============================================================
@@ -139,7 +138,6 @@ public class FileEntry
 {
     public string FilePath { get; set; }
     public FileProcessState State { get; set; }
-    public string DocNumber { get; set; }                // 採番された文書番号（追加済みの場合）
 }
 
 // ==============================================================
@@ -927,7 +925,7 @@ public class DepositSeizureApp : Application
         calendarPopup = (Popup)window.FindName("CalendarPopup");
         dateCalendar = (System.Windows.Controls.Calendar)window.FindName("DateCalendar");
 
-        // スピナーの RotateTransform を取得（C#側でアニメーション制御するため）
+        // スピナーの RotateTransform を取得（回転アニメーションの開始/停止を制御するため）
         var spinnerElement = (FrameworkElement)window.FindName("SpinnerPath");
         if (spinnerElement != null)
             spinnerRotation = spinnerElement.RenderTransform as RotateTransform;
@@ -1141,8 +1139,7 @@ public class DepositSeizureApp : Application
         gv.Columns[5].Width = col5;
     }
 
-    // スピナー回転アニメーションを開始
-    // By 方式（現在値に加算）でサイクル境界のちらつきを防止
+    // スピナー回転アニメーションを開始（RepeatBehavior.Forever で無限回転）
     private void StartSpinner()
     {
         if (spinnerRotation == null) return;
