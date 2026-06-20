@@ -723,7 +723,7 @@ public class DepositSeizureApp : Application
     private static readonly SolidColorBrush BrushBorderNormal    = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D0D0D0"));
     private static readonly SolidColorBrush BrushValidationError = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D32F2F"));
     private static readonly SolidColorBrush BrushSuccessIcon     = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#107C41"));
-    private static readonly SolidColorBrush BrushAccent          = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#005FB8"));
+    private static readonly SolidColorBrush BrushAccent          = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00897B"));
 
     // --- 定数 ---
     private const int ACCOUNT_TABLE_MAX_ROWS = 200;        // 口座テーブル最大読取り行数
@@ -2588,21 +2588,21 @@ public class DepositSeizureApp : Application
                 </Grid>
                 <ControlTemplate.Triggers>
                     <Trigger Property='IsMouseOver' Value='True'>
-                        <Setter TargetName='bd' Property='BorderBrush' Value='#005FB8'/></Trigger>
+                        <Setter TargetName='bd' Property='BorderBrush' Value='#00897B'/></Trigger>
                 </ControlTemplate.Triggers>
             </ControlTemplate>
         </Setter.Value></Setter>
     </Style>
     <!-- アクセントボタン（青背景） -->
     <Style x:Key='AB' TargetType='Button'>
-        <Setter Property='Background' Value='#005FB8'/><Setter Property='Foreground' Value='White'/>
+        <Setter Property='Background' Value='#00897B'/><Setter Property='Foreground' Value='White'/>
         <Setter Property='FontSize' Value='12'/><Setter Property='Padding' Value='16,8'/>
         <Setter Property='Cursor' Value='Hand'/><Setter Property='BorderThickness' Value='0'/>
         <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
             <Border x:Name='bd' Background='{TemplateBinding Background}' CornerRadius='4' Padding='{TemplateBinding Padding}'>
                 <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border>
             <ControlTemplate.Triggers>
-                <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='Background' Value='#004FA0'/></Trigger>
+                <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='Background' Value='#00796B'/></Trigger>
                 <Trigger Property='IsEnabled' Value='False'><Setter TargetName='bd' Property='Background' Value='#CCC'/><Setter Property='Foreground' Value='#999'/></Trigger>
             </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
     <!-- グレーボタン -->
@@ -2615,7 +2615,7 @@ public class DepositSeizureApp : Application
                 BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='4' Padding='{TemplateBinding Padding}'>
                 <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border>
             <ControlTemplate.Triggers>
-                <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='Background' Value='#F0F4F8'/></Trigger>
+                <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='Background' Value='#EEF6F5'/></Trigger>
             </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
     <!-- CheckBox 青スタイル（チェック時に青背景＋白チェックマーク） -->
     <Style TargetType='CheckBox'>
@@ -2631,11 +2631,11 @@ public class DepositSeizureApp : Application
                     <ContentPresenter VerticalAlignment='Center'/></StackPanel>
                 <ControlTemplate.Triggers>
                     <Trigger Property='IsChecked' Value='True'>
-                        <Setter TargetName='cbBox' Property='Background' Value='#005FB8'/>
-                        <Setter TargetName='cbBox' Property='BorderBrush' Value='#005FB8'/>
+                        <Setter TargetName='cbBox' Property='Background' Value='#00897B'/>
+                        <Setter TargetName='cbBox' Property='BorderBrush' Value='#00897B'/>
                         <Setter TargetName='cbCheck' Property='Visibility' Value='Visible'/></Trigger>
                     <Trigger Property='IsMouseOver' Value='True'>
-                        <Setter TargetName='cbBox' Property='BorderBrush' Value='#005FB8'/></Trigger>
+                        <Setter TargetName='cbBox' Property='BorderBrush' Value='#00897B'/></Trigger>
                 </ControlTemplate.Triggers>
             </ControlTemplate>
         </Setter.Value></Setter>
@@ -2659,7 +2659,7 @@ public class DepositSeizureApp : Application
     </Style>
 </Window.Resources>
 <DockPanel>
-    <Border DockPanel.Dock='Top' Background='#005FB8' Padding='18,10'>
+    <Border DockPanel.Dock='Top' Background='#00897B' Padding='18,10'>
         <TextBlock Text='預金差押予定一覧 作成ツール' FontSize='13' FontWeight='Medium' Foreground='White'/></Border>
     <Border DockPanel.Dock='Bottom' Background='#F0F0F0' BorderBrush='#E0E0E0' BorderThickness='0,1,0,0' Padding='18,4'>
         <DockPanel>
@@ -2670,7 +2670,7 @@ public class DepositSeizureApp : Application
     <Grid>
         <!-- 初期画面 -->
         <Grid x:Name='InitialPanel'>
-            <Border Background='White' BorderBrush='#C0C8D0' BorderThickness='2' CornerRadius='8'
+            <Border Background='White' BorderBrush='#B2CECB' BorderThickness='2' CornerRadius='8'
                     Margin='80,60' VerticalAlignment='Center' HorizontalAlignment='Center' Padding='60,40'>
                 <StackPanel HorizontalAlignment='Center'>
                     <TextBlock Text='&#x1F4C2;' FontSize='36' HorizontalAlignment='Center' Margin='0,0,0,12'/>
@@ -2688,8 +2688,8 @@ public class DepositSeizureApp : Application
                 <TextBlock Text='シート:' VerticalAlignment='Center' Foreground='#555' FontSize='11' Margin='0,0,6,0'/>
                 <ComboBox x:Name='SheetCombo' MinWidth='180' FontSize='12'/>
                 <StackPanel DockPanel.Dock='Right' Orientation='Horizontal' HorizontalAlignment='Right'>
-                    <TextBlock Text='&#x1F4C4; ' FontSize='11' Foreground='#005FB8' VerticalAlignment='Center'/>
-                    <TextBlock x:Name='FileLink' FontSize='11' Foreground='#005FB8'
+                    <TextBlock Text='&#x1F4C4; ' FontSize='11' Foreground='#00897B' VerticalAlignment='Center'/>
+                    <TextBlock x:Name='FileLink' FontSize='11' Foreground='#00897B'
                                Cursor='Hand' TextDecorations='Underline' VerticalAlignment='Center'/>
                     <Button x:Name='BtnReload' Style='{StaticResource GB}' Padding='8,4' Margin='8,0,0,0' FontSize='11'>
                         <TextBlock Text='&#x1F504; 再読み込み'/></Button>
@@ -2697,7 +2697,7 @@ public class DepositSeizureApp : Application
             </DockPanel>
             <!-- 基本情報 -->
             <Border Grid.Row='1' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
-                <StackPanel><TextBlock Text='&#x1F464; 基本情報' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,10'/>
+                <StackPanel><TextBlock Text='&#x1F464; 基本情報' FontSize='11' Foreground='#00897B' FontWeight='Medium' Margin='0,0,0,10'/>
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
                     <Grid.RowDefinitions><RowDefinition Height='Auto'/><RowDefinition Height='6'/>
                         <RowDefinition Height='Auto'/><RowDefinition Height='6'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
@@ -2736,7 +2736,7 @@ public class DepositSeizureApp : Application
                 </Grid></StackPanel></Border>
             <!-- 口座選択 -->
             <Border Grid.Row='2' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
-                <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,8'/>
+                <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='11' Foreground='#00897B' FontWeight='Medium' Margin='0,0,0,8'/>
                     <Border BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='4' ClipToBounds='True'>
                     <ListView x:Name='AccountList' BorderThickness='0' Background='White' FontSize='12' SelectionMode='Single'>
                         <ListView.ItemContainerStyle>
@@ -2760,10 +2760,10 @@ public class DepositSeizureApp : Application
                                         </Grid>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property='IsMouseOver' Value='True'>
-                                                <Setter TargetName='rowBd' Property='Background' Value='#F5F8FC'/></Trigger>
+                                                <Setter TargetName='rowBd' Property='Background' Value='#F1F9F8'/></Trigger>
                                             <Trigger Property='IsSelected' Value='True'>
-                                                <Setter TargetName='accent' Property='Background' Value='#005FB8'/>
-                                                <Setter TargetName='rowBd' Property='Background' Value='#E8F0FE'/></Trigger>
+                                                <Setter TargetName='accent' Property='Background' Value='#00897B'/>
+                                                <Setter TargetName='rowBd' Property='Background' Value='#E0F2F1'/></Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </Setter.Value></Setter>
@@ -2802,7 +2802,7 @@ public class DepositSeizureApp : Application
         <Grid x:Name='OverlayPanel' Visibility='Collapsed' Background='#CCFFFFFF'>
             <Grid x:Name='LoadingOverlay' Visibility='Collapsed' HorizontalAlignment='Center' VerticalAlignment='Center'>
                 <Path x:Name='SpinnerPath' Data='M 20,2 A 18,18 0 1 1 2,20'
-                      Stroke='#005FB8' StrokeThickness='3'
+                      Stroke='#00897B' StrokeThickness='3'
                       StrokeStartLineCap='Round' StrokeEndLineCap='Round'
                       Width='40' Height='40' Stretch='None'
                       RenderTransformOrigin='0.5,0.5'>
