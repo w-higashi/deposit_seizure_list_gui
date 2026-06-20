@@ -2702,12 +2702,12 @@ public class DepositSeizureApp : Application
                     <Grid.RowDefinitions><RowDefinition Height='Auto'/><RowDefinition Height='6'/>
                         <RowDefinition Height='Auto'/><RowDefinition Height='6'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
                     <!-- 1行目: 宛名番号+氏名 | 金融機関+処分担当 -->
-                    <Grid Grid.Row='0' Grid.Column='0'><Grid.ColumnDefinitions><ColumnDefinition Width='120'/><ColumnDefinition Width='8'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
+                    <Grid Grid.Row='0' Grid.Column='0'><Grid.ColumnDefinitions><ColumnDefinition Width='120'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
                         <StackPanel><TextBlock Text='宛名番号' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
                             <TextBox x:Name='TxtAddressNum' IsReadOnly='True' Background='#F3F3F3' BorderBrush='#E8E8E8' FontFamily='Consolas' FontSize='12' Padding='5,4'/></StackPanel>
                         <StackPanel Grid.Column='2'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>氏名 &#x270E;</TextBlock>
                             <TextBox x:Name='TxtName' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/></StackPanel></Grid>
-                    <Grid Grid.Row='0' Grid.Column='2'><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='8'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
+                    <Grid Grid.Row='0' Grid.Column='2'><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
                         <StackPanel><TextBlock Text='金融機関' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
                             <TextBox x:Name='TxtInstitution' IsReadOnly='True' Background='#F3F3F3' BorderBrush='#E8E8E8' FontSize='12' Padding='5,4'/></StackPanel>
                         <StackPanel Grid.Column='2'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>処分担当 &#x270E;</TextBlock>
