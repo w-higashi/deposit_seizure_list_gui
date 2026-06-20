@@ -1124,11 +1124,11 @@ public class DepositSeizureApp : Application
         double total = accountList.ActualWidth - SystemParameters.VerticalScrollBarWidth - 4;
         if (total <= 0) return;
 
-        double col1 = 95;   // 支店番号
+        double col1 = 105;  // 支店番号
         double col2 = 110;  // 口座種別
         double col3 = 150;  // 最終取引日(満期日)
-        double col4 = 120;  // 口座番号
-        double col5 = 145;  // 残高
+        double col4 = 135;  // 口座番号
+        double col5 = 160;  // 残高
         double branchW = total - col1 - col2 - col3 - col4 - col5;
         if (branchW < 120) branchW = 120;
 
@@ -2541,7 +2541,7 @@ public class DepositSeizureApp : Application
         string xaml = @"
 <Window xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
     xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
-    Title='預金差押予定一覧 作成ツール' Width='1000' Height='660' MinWidth='900' MinHeight='520'
+    Title='預金差押予定一覧 作成ツール' Width='1000' Height='700' MinWidth='900' MinHeight='520'
     WindowStartupLocation='CenterScreen' Background='#F9F9F9' FontFamily='Meiryo UI'
     UseLayoutRounding='True' SnapsToDevicePixels='True'>
 <Window.Resources>
@@ -2658,7 +2658,7 @@ public class DepositSeizureApp : Application
     <!-- GridViewColumnHeader: フラットデザイン（中央揃え） -->
     <Style TargetType='GridViewColumnHeader'>
         <Setter Property='Background' Value='#F5F7FA'/>
-        <Setter Property='Foreground' Value='#888'/>
+        <Setter Property='Foreground' Value='#777'/>
         <Setter Property='FontSize' Value='11'/>
         <Setter Property='Padding' Value='8,8'/>
         <Setter Property='HorizontalContentAlignment' Value='Center'/>
@@ -2679,7 +2679,7 @@ public class DepositSeizureApp : Application
     <Border DockPanel.Dock='Bottom' Background='#F0F0F0' BorderBrush='#E0E0E0' BorderThickness='0,1,0,0' Padding='18,4'>
         <DockPanel>
                 <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'>
-                    <TextBlock Text='出力先: ' FontSize='11' Foreground='#999'/>
+                    <TextBlock Text='出力先: ' FontSize='11' Foreground='#666'/>
                     <TextBlock x:Name='StatusRight' FontSize='11' Foreground='#666'/></StackPanel>
                 <TextBlock x:Name='StatusLeft' FontSize='11' Foreground='#666'/></DockPanel></Border>
     <Grid>
@@ -2712,31 +2712,31 @@ public class DepositSeizureApp : Application
             </DockPanel>
             <!-- 基本情報 -->
             <Border Grid.Row='1' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
-                <StackPanel><TextBlock Text='&#x1F464; 基本情報' FontSize='11' Foreground='#00897B' FontWeight='Medium' Margin='0,0,0,10'/>
+                <StackPanel><TextBlock Text='&#x1F464; 基本情報' FontSize='13' Foreground='#00897B' FontWeight='Medium' Margin='0,0,0,10'/>
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
                     <Grid.RowDefinitions><RowDefinition Height='Auto'/><RowDefinition Height='6'/>
                         <RowDefinition Height='Auto'/><RowDefinition Height='6'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
                     <!-- 1行目: 宛名番号+氏名 | 金融機関+処分担当 -->
                     <Grid Grid.Row='0' Grid.Column='0'><Grid.ColumnDefinitions><ColumnDefinition Width='120'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
-                        <StackPanel><TextBlock Text='宛名番号' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
+                        <StackPanel><TextBlock Text='宛名番号' FontSize='11' Foreground='#777' Margin='0,0,0,3'/>
                             <TextBox x:Name='TxtAddressNum' IsReadOnly='True' Background='#F3F3F3' BorderBrush='#E8E8E8' FontFamily='Consolas' FontSize='12' Padding='5,4'/></StackPanel>
-                        <StackPanel Grid.Column='2'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>氏名 &#x270E;</TextBlock>
+                        <StackPanel Grid.Column='2'><TextBlock FontSize='11' Foreground='#777' Margin='0,0,0,3'>氏名 &#x270E;</TextBlock>
                             <TextBox x:Name='TxtName' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/></StackPanel></Grid>
                     <Grid Grid.Row='0' Grid.Column='2'><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
-                        <StackPanel><TextBlock Text='金融機関' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
+                        <StackPanel><TextBlock Text='金融機関' FontSize='11' Foreground='#777' Margin='0,0,0,3'/>
                             <TextBox x:Name='TxtInstitution' IsReadOnly='True' Background='#F3F3F3' BorderBrush='#E8E8E8' FontSize='12' Padding='5,4'/></StackPanel>
-                        <StackPanel Grid.Column='2'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>処分担当 &#x270E;</TextBlock>
+                        <StackPanel Grid.Column='2'><TextBlock FontSize='11' Foreground='#777' Margin='0,0,0,3'>処分担当 &#x270E;</TextBlock>
                             <TextBox x:Name='TxtStaff' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/></StackPanel></Grid>
                     <!-- 2行目: 住民票住所 | 届出住所+バリデーション -->
-                    <StackPanel Grid.Row='2' Grid.Column='0'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>住民票住所 &#x270E;</TextBlock>
+                    <StackPanel Grid.Row='2' Grid.Column='0'><TextBlock FontSize='11' Foreground='#777' Margin='0,0,0,3'>住民票住所 &#x270E;</TextBlock>
                         <TextBox x:Name='TxtResidenceAddr' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/></StackPanel>
-                    <StackPanel Grid.Row='2' Grid.Column='2'><TextBlock FontSize='10' Foreground='#888' Margin='0,0,0,3'>届出住所 &#x270E;</TextBlock>
+                    <StackPanel Grid.Row='2' Grid.Column='2'><TextBlock FontSize='11' Foreground='#777' Margin='0,0,0,3'>届出住所 &#x270E;</TextBlock>
                         <TextBox x:Name='TxtDeliveryAddr' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0'/>
                         <TextBlock x:Name='DeliveryError' Foreground='#D32F2F' FontSize='10' Visibility='Collapsed' Margin='0,1,0,0'/></StackPanel>
                     <!-- 3行目: 執行日+カレンダー | チェックボックス -->
-                    <StackPanel Grid.Row='4' Grid.Column='0'><TextBlock Text='執行日' FontSize='10' Foreground='#888' Margin='0,0,0,3'/>
+                    <StackPanel Grid.Row='4' Grid.Column='0'><TextBlock Text='執行日' FontSize='11' Foreground='#777' Margin='0,0,0,3'/>
                         <StackPanel Orientation='Horizontal'>
-                            <TextBox x:Name='TxtExecDate' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0' FontFamily='Consolas' Width='150'/>
+                            <TextBox x:Name='TxtExecDate' FontSize='12' Padding='5,4' BorderBrush='#D0D0D0' FontFamily='Consolas' Width='120'/>
                             <Button x:Name='BtnCalendar' Style='{StaticResource GB}' Padding='6,4' Margin='4,0,0,0'>
                                 <TextBlock Text='&#x1F4C5;' FontSize='13'/></Button>
                             <Popup x:Name='CalendarPopup' StaysOpen='False' Placement='Bottom' AllowsTransparency='True'>
@@ -2747,11 +2747,11 @@ public class DepositSeizureApp : Application
                             </Popup>
                         </StackPanel></StackPanel>
                     <StackPanel Grid.Row='4' Grid.Column='2' VerticalAlignment='Top' Margin='0,18,0,0'>
-                        <CheckBox x:Name='ChkDeliveryOutput' Content='届出住所を差押通知書に出力する' FontSize='11'/></StackPanel>
+                        <CheckBox x:Name='ChkDeliveryOutput' Content='届出住所を差押通知書に出力する' FontSize='12'/></StackPanel>
                 </Grid></StackPanel></Border>
             <!-- 口座選択 -->
             <Border Grid.Row='2' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
-                <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='11' Foreground='#00897B' FontWeight='Medium' Margin='0,0,0,8'/>
+                <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='13' Foreground='#00897B' FontWeight='Medium' Margin='0,0,0,8'/>
                     <Border BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='4' ClipToBounds='True'>
                     <ListView x:Name='AccountList' BorderThickness='0' Background='White' FontSize='12' SelectionMode='Single'>
                         <ListView.ItemContainerStyle>
