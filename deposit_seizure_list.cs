@@ -114,7 +114,7 @@ public class AccountItem
     }
     public string SeizureTooltip                          // 差押実績のツールチップ
     {
-        get { return HasSeizureHistory ? "差押実績あり（文書番号: " + SeizureDocNumber + "）" : null; }
+        get { return HasSeizureHistory ? "差押実績あり（執行日: " + SeizureExecDate + " / 文書番号: " + SeizureDocNumber + "）" : null; }
     }
     public double BalanceValue { get; set; }             // 残高（数値、ソート用）
     public string Balance { get; set; }                  // 残高（表示用、通貨形式）
@@ -122,6 +122,7 @@ public class AccountItem
     public string DeliveryAddressRaw { get; set; }        // 所属する表紙ブロックの届出住所（生値）
     public bool HasSeizureHistory { get; set; }          // 差押実績の有無
     public string SeizureDocNumber { get; set; }         // 差押実績の文書番号（あれば）
+    public string SeizureExecDate { get; set; }          // 差押実績の執行日（あれば、表示用）
 }
 
 // ファイルの処理状態
@@ -714,7 +715,7 @@ public class DepositSeizureApp : Application
     private DateTime? processingDate = null;                // 執行日（内部保持）
     private bool isFromFileSearch = false;                  // file_search からの遷移か
     private int lastDisplayedCoverIndex = -1;               // 届出住所の自動更新で使用するカバーインデックス
-    private Dictionary<string, string> seizureHistory = new Dictionary<string, string>(); // 差押実績
+    private Dictionary<string, string[]> seizureHistory = new Dictionary<string, string[]>(); // 差押実績（値: [文書番号, 執行日表示]）
     private bool suppressSheetChange = false;               // PopulateForm中のSelectionChanged抑止
 
     // --- キャッシュ済みブラシ（ShowResult・バリデーション表示用） ---
@@ -1571,7 +1572,9 @@ public class DepositSeizureApp : Application
                     if (seizureHistory.ContainsKey(historyKey))
                     {
                         item.HasSeizureHistory = true;
-                        item.SeizureDocNumber = seizureHistory[historyKey];
+                        var hist = seizureHistory[historyKey];
+                        item.SeizureDocNumber = hist[0];
+                        item.SeizureExecDate = hist[1];
                     }
 
                     accounts.Add(item);
@@ -2087,11 +2090,17 @@ public class DepositSeizureApp : Application
             for (int i = 1; i < lines.Length; i++)  // ヘッダー行をスキップ
             {
                 var fields = ParseCsvLine(lines[i]);
-                // f[1]=宛名番号, f[11]=口座番号, f[15]=文書番号
+                // f[1]=宛名番号, f[4]=執行日(7桁和暦), f[11]=口座番号, f[15]=文書番号
                 if (fields.Length >= 16)
                 {
                     string key = fields[1].Trim() + "_" + fields[11].Trim();
-                    seizureHistory[key] = fields[15].Trim();  // 後勝ち＝直近の文書番号
+                    string docNum = fields[15].Trim();
+                    // 7桁和暦 → "yyyy年M月d日" 表示形式に変換
+                    string execDateDisplay = "";
+                    var dt = BusinessLogic.WarekiToDate(fields[4].Trim(), eraMapping);
+                    if (dt.HasValue)
+                        execDateDisplay = dt.Value.Year + "年" + dt.Value.Month + "月" + dt.Value.Day + "日";
+                    seizureHistory[key] = new string[] { docNum, execDateDisplay };  // 後勝ち＝直近
                 }
             }
         }
