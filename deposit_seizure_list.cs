@@ -724,6 +724,9 @@ public class DepositSeizureApp : Application
     private static readonly SolidColorBrush BrushValidationError = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D32F2F"));
     private static readonly SolidColorBrush BrushSuccessIcon     = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#107C41"));
     private static readonly SolidColorBrush BrushAccent          = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00897B"));
+    private static readonly SolidColorBrush BrushIconBgSuccess   = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8F5ED"));
+    private static readonly SolidColorBrush BrushIconBgError     = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCEBEB"));
+    private static readonly SolidColorBrush BrushIconBgSkip      = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E0F2F1"));
 
     // --- 定数 ---
     private const int ACCOUNT_TABLE_MAX_ROWS = 200;        // 口座テーブル最大読取り行数
@@ -740,6 +743,7 @@ public class DepositSeizureApp : Application
     private ComboBox sheetCombo;
     private TextBlock fileLink, statusLeft, statusRight, guideText, deliveryError;
     private TextBlock resultIcon, resultTitle, resultDocNum, resultDetail, resultSub;
+    private Border resultIconBg;                 // 結果アイコンの背景円
     private TextBox txtAddressNum, txtName, txtInstitution, txtStaff;
     private TextBox txtResidenceAddr, txtDeliveryAddr, txtExecDate;
     private CheckBox chkDeliveryOutput;
@@ -767,6 +771,9 @@ public class DepositSeizureApp : Application
         BrushValidationError.Freeze();
         BrushSuccessIcon.Freeze();
         BrushAccent.Freeze();
+        BrushIconBgSuccess.Freeze();
+        BrushIconBgError.Freeze();
+        BrushIconBgSkip.Freeze();
 
         var app = new DepositSeizureApp();
         app.StartupArgs = args;
@@ -908,6 +915,7 @@ public class DepositSeizureApp : Application
         guideText = (TextBlock)window.FindName("GuideText");
         deliveryError = (TextBlock)window.FindName("DeliveryError");
         resultIcon = (TextBlock)window.FindName("ResultIcon");
+        resultIconBg = (Border)window.FindName("ResultIconBg");
         resultTitle = (TextBlock)window.FindName("ResultTitle");
         resultDocNum = (TextBlock)window.FindName("ResultDocNum");
         resultDetail = (TextBlock)window.FindName("ResultDetail");
@@ -1911,16 +1919,19 @@ public class DepositSeizureApp : Application
         {
             resultIcon.Text = "\u2713";
             resultIcon.Foreground = BrushSuccessIcon;
+            resultIconBg.Background = BrushIconBgSuccess;
         }
         else if (type == "skip")
         {
             resultIcon.Text = "\u2192";
             resultIcon.Foreground = BrushAccent;
+            resultIconBg.Background = BrushIconBgSkip;
         }
         else
         {
             resultIcon.Text = "\u2717";
             resultIcon.Foreground = BrushValidationError;
+            resultIconBg.Background = BrushIconBgError;
         }
         resultButton.Content = last ? "完了" : "次のファイルへ \u2192";
         resultSub.Text = last ? "" : ((currentFileIndex + 2) + " / " + fileEntries.Count + " 件目へ進みます");
@@ -2812,7 +2823,7 @@ public class DepositSeizureApp : Application
                 <Border Background='White' CornerRadius='10' Padding='44,32' MinWidth='350'>
                     <Border.Effect><DropShadowEffect BlurRadius='16' ShadowDepth='4' Opacity='0.12'/></Border.Effect>
                     <StackPanel HorizontalAlignment='Center'>
-                        <Border Width='52' Height='52' CornerRadius='26' Background='#E8F5ED' HorizontalAlignment='Center' Margin='0,0,0,16'>
+                        <Border x:Name='ResultIconBg' Width='52' Height='52' CornerRadius='26' Background='#E8F5ED' HorizontalAlignment='Center' Margin='0,0,0,16'>
                             <TextBlock x:Name='ResultIcon' Text='&#x2713;' FontSize='28' HorizontalAlignment='Center' VerticalAlignment='Center' Foreground='#107C41'/></Border>
                         <TextBlock x:Name='ResultTitle' Text='' FontSize='16' FontWeight='Medium' HorizontalAlignment='Center' Margin='0,0,0,6'/>
                         <TextBlock x:Name='ResultDocNum' FontSize='18' FontWeight='Medium' HorizontalAlignment='Center' Margin='0,0,0,8'/>
