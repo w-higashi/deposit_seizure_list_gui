@@ -2431,8 +2431,11 @@ public class DepositSeizureApp : Application
     <Border DockPanel.Dock='Top' Background='#005FB8' Padding='18,10'>
         <TextBlock Text='預金差押予定一覧 作成ツール' FontSize='13' FontWeight='Medium' Foreground='White'/></Border>
     <Border DockPanel.Dock='Bottom' Background='#F0F0F0' BorderBrush='#E0E0E0' BorderThickness='0,1,0,0' Padding='18,4'>
-        <DockPanel><TextBlock x:Name='StatusRight' DockPanel.Dock='Right' FontSize='11' Foreground='#666'/>
-            <TextBlock x:Name='StatusLeft' FontSize='11' Foreground='#666'/></DockPanel></Border>
+        <DockPanel>
+                <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'>
+                    <TextBlock Text='出力先: ' FontSize='11' Foreground='#999'/>
+                    <TextBlock x:Name='StatusRight' FontSize='11' Foreground='#666'/></StackPanel>
+                <TextBlock x:Name='StatusLeft' FontSize='11' Foreground='#666'/></DockPanel></Border>
     <Grid>
         <!-- 初期画面 -->
         <Grid x:Name='InitialPanel'>
@@ -2454,15 +2457,16 @@ public class DepositSeizureApp : Application
                 <TextBlock Text='シート:' VerticalAlignment='Center' Foreground='#555' FontSize='11' Margin='0,0,6,0'/>
                 <ComboBox x:Name='SheetCombo' MinWidth='180' FontSize='12'/>
                 <StackPanel DockPanel.Dock='Right' Orientation='Horizontal' HorizontalAlignment='Right'>
+                    <TextBlock Text='&#x1F4C4; ' FontSize='11' Foreground='#005FB8' VerticalAlignment='Center'/>
                     <TextBlock x:Name='FileLink' FontSize='11' Foreground='#005FB8'
                                Cursor='Hand' TextDecorations='Underline' VerticalAlignment='Center'/>
                     <Button x:Name='BtnReload' Style='{StaticResource GB}' Padding='8,4' Margin='8,0,0,0' FontSize='11'>
-                        <TextBlock Text='再読み込み'/></Button>
+                        <TextBlock Text='&#x1F504; 再読み込み'/></Button>
                 </StackPanel>
             </DockPanel>
             <!-- 基本情報 -->
             <Border Grid.Row='1' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
-                <StackPanel><TextBlock Text='基本情報' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,10'/>
+                <StackPanel><TextBlock Text='&#x1F464; 基本情報' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,10'/>
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='16'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
                     <Grid.RowDefinitions><RowDefinition Height='Auto'/><RowDefinition Height='6'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
                     <Grid Grid.Row='0' Grid.Column='0'><Grid.ColumnDefinitions><ColumnDefinition Width='120'/><ColumnDefinition Width='8'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
@@ -2487,7 +2491,7 @@ public class DepositSeizureApp : Application
                 </StackPanel></Border>
             <!-- 口座選択 -->
             <Border Grid.Row='2' Background='White' BorderBrush='#E0E0E0' BorderThickness='1' CornerRadius='6' Padding='16,14' Margin='0,0,0,10'>
-                <DockPanel><TextBlock DockPanel.Dock='Top' Text='口座選択' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,10'/>
+                <DockPanel><TextBlock DockPanel.Dock='Top' Text='&#x2261; 口座選択' FontSize='11' Foreground='#005FB8' FontWeight='Medium' Margin='0,0,0,10'/>
                     <ListView x:Name='AccountList' BorderThickness='0' Background='Transparent' FontSize='12' SelectionMode='Single'>
                         <ListView.ItemContainerStyle>
                             <Style TargetType='ListViewItem'>
@@ -2508,8 +2512,8 @@ public class DepositSeizureApp : Application
                 <Button x:Name='BtnLoadFile' DockPanel.Dock='Left' Style='{StaticResource GB}'><TextBlock Text='ファイルを読み込む'/></Button>
                 <StackPanel DockPanel.Dock='Right' Orientation='Horizontal' HorizontalAlignment='Right'>
                     <TextBlock x:Name='GuideText' VerticalAlignment='Center' FontSize='11' Foreground='#D32F2F' Margin='0,0,12,0'/>
-                    <Button x:Name='BtnSkip' Style='{StaticResource GB}' Margin='0,0,8,0'><TextBlock Text='スキップ'/></Button>
-                    <Button x:Name='BtnAdd' Style='{StaticResource AB}' IsEnabled='False'><TextBlock Text='一覧に追加'/></Button>
+                    <Button x:Name='BtnSkip' Style='{StaticResource GB}' Margin='0,0,8,0'><TextBlock Text='&#x2192; スキップ'/></Button>
+                    <Button x:Name='BtnAdd' Style='{StaticResource AB}' IsEnabled='False'><TextBlock Text='&#xFF0B; 一覧に追加'/></Button>
                 </StackPanel></DockPanel>
         </Grid>
         <!-- オーバーレイ -->
