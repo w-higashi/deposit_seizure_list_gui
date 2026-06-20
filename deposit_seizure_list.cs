@@ -1015,6 +1015,14 @@ public class DepositSeizureApp : Application
         btnCalendar.Click += delegate
         {
             calendarPopup.PlacementTarget = btnCalendar;
+            if (!calendarPopup.IsOpen)
+            {
+                // 前回の表示状態（月/年選択）が残るのを防止し、常に日付選択ビューで開く
+                dateCalendar.DisplayMode = CalendarMode.Month;
+                dateCalendar.DisplayDate = processingDate ?? DateTime.Today;
+                // 選択をクリアすることで同じ日付の再クリックでも SelectedDatesChanged が発火する
+                dateCalendar.SelectedDates.Clear();
+            }
             calendarPopup.IsOpen = !calendarPopup.IsOpen;
         };
         dateCalendar.SelectedDatesChanged += delegate
@@ -1049,6 +1057,20 @@ public class DepositSeizureApp : Application
                 FocusManager.SetFocusedElement(window, window);
                 Keyboard.ClearFocus();
             }
+        };
+
+        // 口座テーブルの空白エリアクリックでもフォーカスを外す
+        // VisualTree を辿って ListViewItem が見つからなければ空白エリアと判定
+        accountList.PreviewMouseDown += delegate(object s, MouseButtonEventArgs me)
+        {
+            var hit = me.OriginalSource as DependencyObject;
+            while (hit != null && hit != accountList)
+            {
+                if (hit is ListViewItem) return;
+                hit = VisualTreeHelper.GetParent(hit);
+            }
+            FocusManager.SetFocusedElement(window, window);
+            Keyboard.ClearFocus();
         };
 
         // 口座テーブルの列幅自動調整
