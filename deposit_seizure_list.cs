@@ -1222,7 +1222,23 @@ public class DepositSeizureApp : Application
 
     private void LoadFileAtIndex(int index)
     {
-        if (index >= fileEntries.Count) { if (isFromFileSearch) Shutdown(); else ShowState("initial"); return; }
+        if (index >= fileEntries.Count)
+        {
+            if (isFromFileSearch) { Shutdown(); return; }
+            // メインフォームをフェードアウトしてから初期画面をフェードインで表示
+            var fadeOut = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromMilliseconds(150)));
+            fadeOut.Completed += delegate
+            {
+                mainPanel.BeginAnimation(UIElement.OpacityProperty, null);
+                mainPanel.Opacity = 1;
+                ShowState("initial");
+                initialPanel.Opacity = 0;
+                initialPanel.BeginAnimation(UIElement.OpacityProperty,
+                    new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(150))));
+            };
+            mainPanel.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+            return;
+        }
         currentFileIndex = index; currentFilePath = fileEntries[index].FilePath;
         statusLeft.Text = fileEntries.Count > 1 ? (index + 1) + " / " + fileEntries.Count + " 件目" : "";
 
