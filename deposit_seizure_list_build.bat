@@ -11,6 +11,7 @@ set CSC=%FWDIR%\csc.exe
 set WPFDIR=%FWDIR%\WPF
 set SRC=deposit_seizure_list.cs
 set OUT=deposit_seizure_list.exe
+set ICO=deposit_seizure_list.ico
 
 if not exist "%CSC%" (
     echo Error: csc.exe not found.
@@ -31,7 +32,7 @@ if not exist "%SRC%" (
 echo Compiling...
 echo.
 
-"%CSC%" /nologo /target:winexe /utf8output /out:"%OUT%" /lib:"%WPFDIR%" /r:PresentationFramework.dll /r:PresentationCore.dll /r:WindowsBase.dll /r:System.Xaml.dll /r:System.dll /r:System.Core.dll /r:System.Runtime.Serialization.dll /r:System.Xml.dll /r:Microsoft.CSharp.dll "%SRC%"
+"%CSC%" /nologo /target:winexe /utf8output /win32icon:"%ICO%" /out:"%OUT%" /lib:"%WPFDIR%" /r:PresentationFramework.dll /r:PresentationCore.dll /r:WindowsBase.dll /r:System.Xaml.dll /r:System.dll /r:System.Core.dll /r:System.Runtime.Serialization.dll /r:System.Xml.dll /r:Microsoft.CSharp.dll "%SRC%"
 
 if %errorlevel% neq 0 (
     echo.

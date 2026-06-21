@@ -22,6 +22,7 @@
 // - deposit_seizure_list_config.json （設定ファイル）
 // - document_number_counter.json （文書番号カウンター）
 // - era_mapping.json （元号マッピング）
+// - deposit_seizure_list.ico （アプリケーションアイコン）
 // - build.bat （ビルドスクリプト）
 // ＜任意＞
 // - transfer_fee_mapping.json, yucho_center_mapping.json,
