@@ -1796,6 +1796,10 @@ public class DepositSeizureApp : Application
             }
         }
 
+        // ボタンを無効化して二重実行を防止
+        btnAdd.IsEnabled = false;
+        btnSkip.IsEnabled = false;
+
         // オーバーレイ表示（処理中スピナー）
         loadingOverlay.Visibility = Visibility.Visible;
         resultOverlay.Visibility = Visibility.Collapsed;
@@ -1990,6 +1994,7 @@ public class DepositSeizureApp : Application
         resultButton.Content = last ? "完了" : "次のファイルへ \u2192";
         resultSub.Text = last ? "" : ((currentFileIndex + 2) + " / " + fileEntries.Count + " 件目へ進みます");
         resultSub.Visibility = last ? Visibility.Collapsed : Visibility.Visible;
+        resultButton.Focus();
     }
 
     // 次のファイルへ進む（オーバーレイをフェードアウトしてから次のインデックスを読み込む）
