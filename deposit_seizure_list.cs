@@ -1581,8 +1581,9 @@ public class DepositSeizureApp : Application
                         lastTransaction = lastTransRaw.ToString();
 
                     // 残高の取得
+                    object balanceRaw = BulkCellRaw(tableData, ri, cBL);
                     double balanceValue = 0;
-                    try { balanceValue = Convert.ToDouble(BulkCellRaw(tableData, ri, cBL) ?? 0); }
+                    try { balanceValue = Convert.ToDouble(balanceRaw ?? 0); }
                     catch { }
 
                     // AccountItem を構築
@@ -1594,7 +1595,7 @@ public class DepositSeizureApp : Application
                         LastTransaction = lastTransaction,
                         AccountNum = accountNum.Trim(),
                         BalanceValue = balanceValue,
-                        Balance = BusinessLogic.FormatBalance(balanceValue),
+                        Balance = BusinessLogic.FormatBalance(balanceRaw),
                         CoverIndex = coverIndex,
                         DeliveryAddressRaw = coverDeliveryAddr
                     };
