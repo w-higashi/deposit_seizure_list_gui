@@ -713,6 +713,7 @@ public class DepositSeizureApp : Application
     private List<int> stopRows = new List<int>();           // stopValues 検出行
     private DateTime? processingDate = null;                // 執行日（内部保持）
     private bool isFromFileSearch = false;                  // file_search からの遷移か
+    private string seizureLogPath = null;                   // file_search から渡されるログ出力先（null=ログ不要）
     private int lastDisplayedCoverIndex = -1;               // 届出住所の自動更新で使用するカバーインデックス
     private Dictionary<string, string[]> seizureHistory = new Dictionary<string, string[]>(); // 差押実績（値: [文書番号, 執行日表示]）
     private bool suppressSheetChange = false;               // PopulateForm中のSelectionChanged抑止
@@ -874,7 +875,12 @@ public class DepositSeizureApp : Application
         {
             isFromFileSearch = true;
             foreach (var arg in StartupArgs)
-                if (File.Exists(arg)) fileEntries.Add(new FileEntry { FilePath = arg, State = FileProcessState.Pending });
+            {
+                if (arg.StartsWith("--log="))
+                    seizureLogPath = arg.Substring(6).Trim('"');
+                else if (File.Exists(arg))
+                    fileEntries.Add(new FileEntry { FilePath = arg, State = FileProcessState.Pending });
+            }
         }
 
         // --- 差押実績ルックアップ構築 ---
@@ -1777,6 +1783,67 @@ public class DepositSeizureApp : Application
     // 処理実行（一覧に追加・スキップ）
     // ==============================================================
 
+    // file_search 連携用: 差押登録ログをJSONファイルに追記
+    // メイン処理に影響させないため、全体を try/catch で囲む
+    private void WriteSeizureLog(Dictionary<string, string> addData, string docNumber)
+    {
+        if (string.IsNullOrEmpty(seizureLogPath)) return;
+
+        try
+        {
+            // 新エントリの構築
+            var sb = new StringBuilder();
+            sb.Append("{ ");
+            sb.Append("\"addressNumber\": \"" + (addData["addressNum"] ?? "") + "\", ");
+            sb.Append("\"name\": \"" + (addData["name"] ?? "") + "\", ");
+            sb.Append("\"institutionName\": \"" + (addData["institution"] ?? "") + "\", ");
+            sb.Append("\"executionDate\": \"" + processingDate.Value.ToString("yyyy-MM-dd") + "\", ");
+            sb.Append("\"documentNumber\": \"" + (docNumber ?? "") + "\", ");
+            sb.Append("\"registeredAt\": \"" + DateTime.Now.ToString("o") + "\"");
+            sb.Append(" }");
+            var newEntry = sb.ToString();
+
+            // ログフォルダの自動作成
+            var logDir = System.IO.Path.GetDirectoryName(seizureLogPath);
+            if (!string.IsNullOrEmpty(logDir) && !Directory.Exists(logDir))
+                Directory.CreateDirectory(logDir);
+
+            // 排他ロック付きの読み込み→追記→書き戻し
+            const int maxRetry = 3;
+            const int retryWait = 300;
+            for (int attempt = 0; attempt < maxRetry; attempt++)
+            {
+                try
+                {
+                    string existingEntries = "";
+                    if (File.Exists(seizureLogPath))
+                    {
+                        var json = File.ReadAllText(seizureLogPath, Encoding.UTF8);
+                        var arrStart = json.IndexOf('[');
+                        var arrEnd = json.LastIndexOf(']');
+                        if (arrStart >= 0 && arrEnd > arrStart)
+                            existingEntries = json.Substring(arrStart + 1, arrEnd - arrStart - 1).Trim();
+                    }
+
+                    // 新エントリを先頭に追加（降順）
+                    var merged = string.IsNullOrEmpty(existingEntries)
+                        ? newEntry
+                        : newEntry + ",\n    " + existingEntries;
+
+                    var output = "{\n  \"entries\": [\n    " + merged + "\n  ]\n}";
+                    File.WriteAllText(seizureLogPath, output, Encoding.UTF8);
+                    break;
+                }
+                catch (IOException)
+                {
+                    if (attempt < maxRetry - 1)
+                        System.Threading.Thread.Sleep(retryWait);
+                }
+            }
+        }
+        catch { /* ログ書き込み失敗は無視 */ }
+    }
+
     // 「一覧に追加」ボタン押下時の処理
     // バリデーション → UI入力値をDictionaryに収集 → BackgroundWorkerで非同期処理
     private void ExecuteAdd()
@@ -1844,6 +1911,7 @@ public class DepositSeizureApp : Application
             var result = args.Result as Dictionary<string, string>;
             if (result["status"] == "ok")
             {
+                WriteSeizureLog(addData, result["docNumber"]);
                 fileEntries[currentFileIndex].State = FileProcessState.Added;
                 CrossFadeToResult("success", "一覧に追加しました",
                     "文書番号: " + result["docNumber"]);
