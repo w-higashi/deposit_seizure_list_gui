@@ -1794,6 +1794,7 @@ public class DepositSeizureApp : Application
             // 新エントリの構築
             var sb = new StringBuilder();
             sb.Append("{ ");
+            sb.Append("\"kind\": \"deposit\", ");
             sb.Append("\"addressNumber\": \"" + (addData["addressNum"] ?? "") + "\", ");
             sb.Append("\"name\": \"" + (addData["name"] ?? "") + "\", ");
             sb.Append("\"institutionName\": \"" + (addData["institution"] ?? "") + "\", ");
