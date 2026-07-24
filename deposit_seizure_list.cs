@@ -85,11 +85,13 @@ public class AppConfig
 {
     public List<ProfileConfig> Profiles { get; set; }
     public string DefaultFolder { get; set; }            // 初期画面のファイル選択初期フォルダ（任意）
+    public string CsvFileName { get; set; }              // 出力先CSVファイル名（年度切替用・必須）
 
     public AppConfig()
     {
         Profiles = new List<ProfileConfig>();
         DefaultFolder = null;
+        CsvFileName = null;
     }
 }
 
@@ -317,6 +319,7 @@ public static class ConfigLoader
 
         var json = File.ReadAllText(configPath, Encoding.UTF8);
         config.DefaultFolder = JsonHelper.GetString(json, "defaultFolder");
+        config.CsvFileName = JsonHelper.GetString(json, "csvFileName");
 
         foreach (var profileJson in JsonHelper.GetObjectArray(json, "profiles"))
         {
@@ -735,7 +738,7 @@ public class DepositSeizureApp : Application
     private const int CSV_WRITE_MAX_RETRY = 5;             // CSV書き込みリトライ回数
     private const int CSV_WRITE_RETRY_INTERVAL_MS = 500;   // CSV書き込みリトライ間隔
     private const int MAX_PATH = 260;                      // Windowsのパス長上限
-    private const string CSV_FILENAME = "預金差押予定一覧.csv";
+    // CSV ファイル名は config.CsvFileName（AppConfig）から取得（旧 CSV_FILENAME 定数は v1.2 で config 化）
     private const string CSV_HEADER = "登録日時,宛名番号,氏名,職員名,執行日,住民票住所,銀行届出住所,金融機関名,支店名,支店番号,口座種別,口座番号,差押文言1,差押文言2,差押文言3,文書番号,照会結果ファイル名,処理済フラグ1,処理済フラグ2,処理済フラグ3";
 
 
@@ -818,7 +821,10 @@ public class DepositSeizureApp : Application
         activeProfile = config.Profiles[0]; // 複数時は最初を自動選択
 
         // --- プロファイルの最低限のバリデーション ---
+        // csvFileName は AppConfig レベル項目だが、UI 文言統一のため同じリストに集約
         var validationErrors = new List<string>();
+        if (string.IsNullOrWhiteSpace(config.CsvFileName))
+            validationErrors.Add("csvFileName が未設定です");
         if (string.IsNullOrWhiteSpace(activeProfile.CoverCell))
             validationErrors.Add("coverCell が未設定です");
         if (string.IsNullOrWhiteSpace(activeProfile.CoverValue))
@@ -1999,7 +2005,7 @@ public class DepositSeizureApp : Application
         string csvLine = string.Join(",", csvFields.Select(f => BusinessLogic.CsvEscape(f)));
 
         // 5. CSV追記
-        string csvPath = System.IO.Path.Combine(activeProfile.OutputFolder, CSV_FILENAME);
+        string csvPath = System.IO.Path.Combine(activeProfile.OutputFolder, config.CsvFileName);
         if (!WriteCsvLine(csvPath, csvLine))
         {
             RollbackDocNumber();
@@ -2203,7 +2209,7 @@ public class DepositSeizureApp : Application
         seizureHistory.Clear();
         if (activeProfile.OutputFolder == null) return;
 
-        string csvPath = System.IO.Path.Combine(activeProfile.OutputFolder, CSV_FILENAME);
+        string csvPath = System.IO.Path.Combine(activeProfile.OutputFolder, config.CsvFileName);
         if (!File.Exists(csvPath)) return;
 
         try

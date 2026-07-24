@@ -30,8 +30,15 @@
     "   GUI版の初期画面およびファイル選択ダイアログの初期フォルダパス。",
     "   profiles 配列内のプロファイルごとに設定可能。",
     "   省略時はOSのデフォルトフォルダが使用される。",
-    "   コンソール版（.ps1）では無視される。"
+    "   コンソール版（.ps1）では無視される。",
+    "",
+    "■ csvFileName（文字列・必須・v1.2）",
+    "   出力先CSVのファイル名。profiles 内の outputFolder と結合して使用する。",
+    "   年度切替時はこの値を新年度ファイル名に変更する（例: 預金差押予定一覧_R9.csv）。",
+    "   seizure_list_manager もこの値を参照するため、manager 側の設定変更は不要。",
+    "   未設定の場合は起動時に設定エラーで停止する。"
   ],
+  "csvFileName": "預金差押予定一覧_2026.csv",
   "profiles": [
     {
       "name": "現年徴収 預金差押予定一覧作成",
@@ -45,7 +52,7 @@
       "deliveryAddressCell": "Y15",
       "financialInstitutionCell": "Q9",
       "filterCell": "T6",
-      "filterValue": "現年",
+      "filterValue": ["現年", "滞繰"],
       "accountStartRow": 26,
       "branchNameCol": "C",
       "branchNumberCol": "J",
