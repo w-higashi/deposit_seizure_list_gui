@@ -1991,7 +1991,7 @@ public class DepositSeizureApp : Application
             addData["institution"],                           // 金融機関名
             csvBranchName,                                    // 支店名（マッピング適用後）
             addData["branchNumber"],                          // 支店番号
-            addData["accountType"],                           // 口座種別
+            seizureText["AccountType"],                       // 口座種別（account_type_mapping 補正後）
             addData["accountNum"],                            // 口座番号
             seizureText["Line1"],                             // 差押文言1
             seizureText["Line2"],                             // 差押文言2（振込手数料）
@@ -2151,7 +2151,8 @@ public class DepositSeizureApp : Application
         {
             { "Line1", line1 },
             { "Line2", feeText },
-            { "Line3", "債権差押通知書到達日現在の残高\u3000\u3000\u3000\u3000\u3000\u3000円\u3000差押額\u3000\u3000\u3000\u3000\u3000\u3000円" }
+            { "Line3", "債権差押通知書到達日現在の残高\u3000\u3000\u3000\u3000\u3000\u3000円\u3000差押額\u3000\u3000\u3000\u3000\u3000\u3000円" },
+            { "AccountType", displayAccountType }  // 補正後の口座種別（CSV出力用・account_type_mapping 適用済み）
         };
     }
 
